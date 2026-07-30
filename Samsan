@@ -22,6 +22,8 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 
+local _farmState = { isRecording = false, routePoints = {}, clearBtn = nil }
+
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
@@ -627,16 +629,12 @@ local function handleFlyAndSpeed(deltaTime)
             end
         else
             -- Character Speed
-            if humanoid.MoveDirection.Magnitude > 0 then
-                local speedStr = isFarmPlaying and 300 or getSpeed()
-                local speedDiff = speedStr - humanoid.WalkSpeed
-                if speedDiff > 0 then
-                    local displacement = humanoid.MoveDirection * (speedDiff * deltaTime)
-                    if hrp then
-                        hrp.CFrame = hrp.CFrame + displacement
-                    end
-                end
-            end
+            local speedStr = isFarmPlaying and 300 or getSpeed()
+            humanoid.WalkSpeed = speedStr
+        end
+    else
+        if not isFlyEnabled() and humanoid.WalkSpeed > 50 then
+            humanoid.WalkSpeed = 16
         end
     end
 
@@ -828,8 +826,8 @@ pcall(function()
                 if key == "WalkSpeed" or key == "FloorMaterial" then
                     local class = oldIndex(self, "ClassName")
                     if class == "Humanoid" then
-                        if key == "WalkSpeed" and isCustomSpeed() then return 16 end
-                        if key == "FloorMaterial" and (isFlyEnabled() or isCustomSpeed() or isTPing) then return Enum.Material.Plastic end
+                        if key == "WalkSpeed" and (isCustomSpeed() or speedHoldActive or isFarmPlaying) then return 16 end
+                        if key == "FloorMaterial" and (isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing) then return Enum.Material.Plastic end
                     end
                 elseif key == "Velocity" or key == "AssemblyLinearVelocity" then
                     local name = oldIndex(self, "Name")
@@ -919,6 +917,29 @@ pcall(function()
                             if changed then
                                 return oldNamecall(self, unpack(args))
                             end
+                        end
+                    end
+                end
+                
+                if _farmState.isRecording then
+                    local lowerName = string.lower(name)
+                    if string.find(lowerName, "purchase") or string.find(lowerName, "sell") or string.find(lowerName, "launder") or string.find(lowerName, "buy") then
+                        local args = {...}
+                        local root = getCharRoot()
+                        local lastPoint = _farmState.routePoints[#_farmState.routePoints]
+                        local addRemote = true
+                        if lastPoint and lastPoint.type == "remote" and lastPoint.instance == self then
+                            if root and (lastPoint.pos - root.Position).Magnitude < 5 then
+                                addRemote = false
+                            end
+                        end
+                        if addRemote then
+                            table.insert(_farmState.routePoints, { type = "remote", instance = self, method = method, args = args, pos = root and root.Position or Vector3.zero })
+                            task.spawn(function()
+                                if _farmState.clearBtn then
+                                    _farmState.clearBtn.Text = "Очистить маршрут (Точек: " .. #_farmState.routePoints .. ")"
+                                end
+                            end)
                         end
                     end
                 end
@@ -1315,10 +1336,41 @@ connectSignal(RunService.Heartbeat, function(dt)
                                     fireproximityprompt(currentPoint.prompt)
                                 else
                                     currentPoint.prompt:InputHoldBegin()
-                                    task.wait(0.1)
+                                    task.wait(currentPoint.prompt.HoldDuration > 0 and currentPoint.prompt.HoldDuration or 0.1)
                                     currentPoint.prompt:InputHoldEnd()
                                 end
-                                task.wait(0.1)
+                                task.wait(0.2)
+                            end
+                        end)
+                    end
+                    playIndex = playIndex + 1
+                    if playIndex > #routePoints then playIndex = 1 end
+                    playStuckTimer = 0
+                else
+                    humanoid:MoveTo(targetPos)
+                    if targetPos.Y - root.Position.Y > 2 then
+                        humanoid.Jump = true
+                    end
+                    playStuckTimer = playStuckTimer + dt
+                    if playStuckTimer > 2 then
+                        playIndex = playIndex + 1
+                        if playIndex > #routePoints then playIndex = 1 end
+                        playStuckTimer = 0
+                    end
+                end
+            elseif currentPoint.type == "remote" then
+                if distXZ < 10 then
+                    if currentPoint.instance and currentPoint.instance.Parent then
+                        task.spawn(function()
+                            for i = 1, 5 do
+                                pcall(function()
+                                    if currentPoint.method == "FireServer" then
+                                        currentPoint.instance:FireServer(unpack(currentPoint.args))
+                                    elseif currentPoint.method == "InvokeServer" then
+                                        currentPoint.instance:InvokeServer(unpack(currentPoint.args))
+                                    end
+                                end)
+                                task.wait(0.2)
                             end
                         end)
                     end
