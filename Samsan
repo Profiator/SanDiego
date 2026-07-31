@@ -3,6 +3,21 @@
 _G.SanDiegoActive = true
 local espHighlights = {}
 
+-- Убийца клиентских античитов
+pcall(function()
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    for _, v in ipairs(LocalPlayer:GetDescendants()) do
+        if v:IsA("LocalScript") then
+            local name = string.lower(v.Name)
+            if string.find(name, "anti") or string.find(name, "cheat") or string.find(name, "protect") or string.find(name, "security") or string.find(name, "detect") or string.find(name, "speed") or string.find(name, "fly") or string.find(name, "tp") then
+                pcall(function() v.Disabled = true end)
+                pcall(function() v:Destroy() end)
+            end
+        end
+    end
+end)
+
 if _G.SanDiegoConnections then
     for _, conn in ipairs(_G.SanDiegoConnections) do
         pcall(function() if conn and conn.Connected then conn:Disconnect() end end)
@@ -45,12 +60,41 @@ local function getCharRoot(preferVehicle)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
+local isCustomSpeed = function() return false end
+local isFlyEnabled = function() return false end
+local speedHoldActive = false
+local isFarmPlaying = false
+local isTPing = false
+
+local legitPosition = nil
+connectSignal(RunService.Heartbeat, function(dt)
+    local hrp = getCharRoot()
+    if hrp then
+        if not legitPosition then
+            legitPosition = hrp.Position
+        else
+            if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing then
+                local dist = (hrp.Position - legitPosition).Magnitude
+                local maxMove = 28 * dt -- Safe speed limit to bypass AC (28 studs/sec)
+                if dist > maxMove then
+                    legitPosition = legitPosition + (hrp.Position - legitPosition).Unit * maxMove
+                else
+                    legitPosition = hrp.Position
+                end
+            else
+                legitPosition = hrp.Position
+            end
+        end
+    end
+end)
+
 -- === АНТИЧИТ ОБХОД (ПЛАТФОРМА ДЛЯ АНТИ-ФЛАЯ) ===
 local flyPlatform = Instance.new("Part")
-flyPlatform.Size = Vector3.new(100, 2, 100)
-flyPlatform.Transparency = 0.99
+flyPlatform.Size = Vector3.new(30, 1, 30)
+flyPlatform.Transparency = 0.4
 flyPlatform.Anchored = true
 flyPlatform.CanCollide = true
+flyPlatform.Material = Enum.Material.SmoothPlastic
 flyPlatform.Name = "SanDiegoPlatform"
 pcall(function() flyPlatform.Parent = Workspace end)
 
@@ -485,9 +529,10 @@ end)
 
 -- FLY & SPEED
 createLabel("СКОРОСТЬ & ПОЛЕТ (ОБХОД АНТИЧИТА)", MainTab)
-local isCustomSpeed = createToggle("Включить скорость", MainTab)
-local getSpeed = createSlider("Скорость", 16, 300, 100, MainTab)
-local isFlyEnabled, setFlyEnabled = createToggle("Свободный полет", MainTab)
+isCustomSpeed = createToggle("Включить скорость", MainTab)
+local getSpeed = createSlider("Скорость", 16, 600, 100, MainTab)
+local isNoclipEnabled = createToggle("Панч/Проход сквозь стены (Noclip)", MainTab)
+isFlyEnabled, setFlyEnabled = createToggle("Свободный полет", MainTab)
 local isInfJump = createToggle("Бесконечный прыжок", MainTab)
 
 local lastGroundTime = tick()
@@ -518,7 +563,7 @@ end)
 local speedBindKey = nil
 local speedBindType = nil
 local isBindingSpeed = false
-local speedHoldActive = false
+-- speedHoldActive already declared above
 
 local speedBindFrame = Instance.new("Frame")
 speedBindFrame.Size = UDim2.new(1, 0, 0, 40)
@@ -591,7 +636,7 @@ connectSignal(UserInputService.InputEnded, function(input, gpe)
     end
 end)
 
-local isFarmPlaying = false
+-- isFarmPlaying already declared above
 local flying = false
 local flyActiveTime = 0
 local function handleFlyAndSpeed(deltaTime)
@@ -619,7 +664,7 @@ local function handleFlyAndSpeed(deltaTime)
             -- Vehicle Speed bypass
             local seat = humanoid.SeatPart
             if seat.Throttle ~= 0 then
-                local speedStr = isFarmPlaying and 300 or getSpeed()
+                local speedStr = isFarmPlaying and 600 or getSpeed()
                 local moveDir = root.CFrame.lookVector * seat.Throttle
                 root.AssemblyLinearVelocity = Vector3.new(
                     moveDir.X * speedStr,
@@ -629,8 +674,17 @@ local function handleFlyAndSpeed(deltaTime)
             end
         else
             -- Character Speed
-            local speedStr = isFarmPlaying and 300 or getSpeed()
-            humanoid.WalkSpeed = speedStr
+            local speedStr = isFarmPlaying and 600 or getSpeed()
+            humanoid.WalkSpeed = 16
+            local moveDir = humanoid.MoveDirection
+            if moveDir.Magnitude > 0 then
+                local diff = speedStr - 16
+                if diff > 0 then
+                    -- Use AssemblyLinearVelocity instead of CFrame modification for speed to prevent freezing with Position spoofing
+                    local flatMoveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
+                    root.AssemblyLinearVelocity = Vector3.new(flatMoveDir.X * speedStr, root.AssemblyLinearVelocity.Y, flatMoveDir.Z * speedStr)
+                end
+            end
         end
     else
         if not isFlyEnabled() and humanoid.WalkSpeed > 50 then
@@ -638,27 +692,30 @@ local function handleFlyAndSpeed(deltaTime)
         end
     end
 
+    -- Noclip Logic
+    if isNoclipEnabled() then
+        pcall(function()
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide and part.Name ~= "HumanoidRootPart" and not string.find(part.Name, "Leg") and not string.find(part.Name, "Foot") then
+                    part.CanCollide = false
+                end
+            end
+        end)
+    end
+
     -- Fly Logic
     if isFlyEnabled() then
-        flyActiveTime = flyActiveTime + deltaTime
-        if flyActiveTime >= 3.5 then
-            setFlyEnabled(false)
-            flyActiveTime = 0
-            flying = false
-            return
-        end
-
         if not flying then
             flying = true
         end
         
-        -- Move Fake Ground below player safely to bypass AntiFly without boosting up
+        -- Move Solid Ground below player continuously to bypass AntiFly and ground checks
         if flyPlatform then
             local targetPos = hrp and hrp.Position or root.Position
             if root ~= hrp then
                 targetPos = root.Position + Vector3.new(0, -6, 0)
             else
-                targetPos = targetPos + Vector3.new(0, -3.1, 0)
+                targetPos = root.Position + Vector3.new(0, -3.5, 0)
             end
             flyPlatform.CFrame = CFrame.new(targetPos)
         end
@@ -832,8 +889,23 @@ pcall(function()
                 elseif key == "Velocity" or key == "AssemblyLinearVelocity" then
                     local name = oldIndex(self, "Name")
                     if name == "HumanoidRootPart" then
-                        if isFlyEnabled() or isCustomSpeed() or isTPing then
+                        if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing then
                             return Vector3.zero
+                        end
+                    end
+                elseif key == "Position" or key == "CFrame" then
+                    local name = oldIndex(self, "Name")
+                    if name == "HumanoidRootPart" then
+                        if not checkcaller() then
+                            if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing then
+                                if legitPosition then
+                                    if key == "Position" then return legitPosition end
+                                    if key == "CFrame" then 
+                                        local oldCf = oldIndex(self, "CFrame")
+                                        return CFrame.new(legitPosition) * oldCf.Rotation
+                                    end
+                                end
+                            end
                         end
                     end
                 elseif key == "Hit" or key == "Target" or key == "UnitRay" then
@@ -867,7 +939,13 @@ pcall(function()
         local method = getnamecallmethod()
         
         if not checkcaller() and typeof(self) == "Instance" then
-            if method == "GetState" then
+            if method == "PivotTo" or method == "SetPrimaryPartCFrame" then
+                if self == LocalPlayer.Character then
+                    if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing or isNoclipEnabled() then
+                        return -- Block anticheat rollback
+                    end
+                end
+            elseif method == "GetState" then
                 local class = oldIndex(self, "ClassName")
                 if class == "Humanoid" then
                     if isFlyEnabled() or isCustomSpeed() or isTPing then
@@ -974,8 +1052,7 @@ pcall(function()
                 local isBlocked = blockedRemotes[name]
                 if isBlocked == nil then
                     local lowerName = string.lower(name)
-                    -- Строгая проверка, чтобы не блокировать 'Character', 'Interact', 'Backpack' (содержат ac) или 'Dialog' (содержит log)
-                    if string.find(lowerName, "anticheat") or string.find(lowerName, "anti_cheat") or lowerName == "ac" or string.find(lowerName, "kick") or string.find(lowerName, "ban") or lowerName == "crash" or string.find(lowerName, "report") then
+                    if string.find(lowerName, "anticheat") or string.find(lowerName, "anti_cheat") or string.find(lowerName, "antitp") or string.find(lowerName, "antifly") or string.find(lowerName, "rollback") or string.find(lowerName, "detect") or string.find(lowerName, "protect") or string.find(lowerName, "position") or string.find(lowerName, "speed") or string.find(lowerName, "teleport") or lowerName == "ac" or string.find(lowerName, "kick") or string.find(lowerName, "ban") or name == "Crash" or string.find(lowerName, "report") then
                         blockedRemotes[name] = true
                         isBlocked = true
                     else
@@ -1022,6 +1099,29 @@ pcall(function()
         return oldNamecall(self, ...)
     end)
     
+    local oldNewIndex = mt.__newindex
+    mt.__newindex = newcclosure(function(self, key, value)
+        if not _G.SanDiegoActive then return oldNewIndex(self, key, value) end
+        if not checkcaller() and typeof(self) == "Instance" then
+            if key == "CFrame" or key == "Position" then
+                local name = oldIndex(self, "Name")
+                if name == "HumanoidRootPart" or name == "Torso" or name == "LowerTorso" then
+                    if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing or isNoclipEnabled() then
+                        return -- Block anticheat rollback
+                    end
+                end
+            elseif key == "WalkSpeed" or key == "JumpPower" then
+                local class = oldIndex(self, "ClassName")
+                if class == "Humanoid" then
+                    if isCustomSpeed() or speedHoldActive or isFarmPlaying then
+                        return
+                    end
+                end
+            end
+        end
+        return oldNewIndex(self, key, value)
+    end)
+
     setreadonly(mt, true)
 end)
 
@@ -1030,27 +1130,35 @@ end)
 createLabel("ИГРОКИ (ESP)", VisualsTab)
 local isESPEnabled = createToggle("Включить подсветку", VisualsTab)
 
-connectSignal(RunService.RenderStepped, function()
-    if isESPEnabled() then
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                if not espHighlights[player] then
-                    local hl = Instance.new("Highlight")
-                    hl.FillColor = Color3.fromRGB(255, 0, 0)
-                    hl.FillTransparency = 0.5
-                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-                    hl.Parent = player.Character
-                    espHighlights[player] = hl
-                elseif espHighlights[player].Parent ~= player.Character then
-                    espHighlights[player].Parent = player.Character
+local espLoopRunning = false
+connectSignal(isESPEnabled, function()
+    -- Nothing here, we just use the loop
+end)
+
+task.spawn(function()
+    while task.wait(1) do
+        if not _G.SanDiegoActive then break end
+        if isESPEnabled() then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    if not espHighlights[player] then
+                        local hl = Instance.new("Highlight")
+                        hl.FillColor = Color3.fromRGB(255, 0, 0)
+                        hl.FillTransparency = 0.5
+                        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        hl.Parent = player.Character
+                        espHighlights[player] = hl
+                    elseif espHighlights[player].Parent ~= player.Character then
+                        espHighlights[player].Parent = player.Character
+                    end
                 end
             end
+        else
+            for player, hl in pairs(espHighlights) do
+                if hl and hl.Parent then hl:Destroy() end
+            end
+            table.clear(espHighlights)
         end
-    else
-        for player, hl in pairs(espHighlights) do
-            if hl and hl.Parent then hl:Destroy() end
-        end
-        table.clear(espHighlights)
     end
 end)
 
@@ -1078,6 +1186,7 @@ local function teleportTo(targetPos, keepVehicle)
     -- If very close, just jump there instantly
     if dist < 50 then
         model:PivotTo(CFrame.new(finalPos))
+        if legitPosition then legitPosition = finalPos end
         if humanoid then pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
         return
     end
@@ -1091,7 +1200,7 @@ local function teleportTo(targetPos, keepVehicle)
             root.Anchored = true
         end
 
-        local stepDist = 350
+        local stepDist = 80
         local steps = math.ceil(dist / stepDist)
         
         for i = 1, steps do
@@ -1099,10 +1208,11 @@ local function teleportTo(targetPos, keepVehicle)
             local alpha = i / steps
             local currentPos = startPos:Lerp(finalPos, alpha)
             model:PivotTo(CFrame.new(currentPos))
+            if legitPosition then legitPosition = currentPos end
             if root:IsA("BasePart") then
                 root.AssemblyLinearVelocity = Vector3.zero
             end
-            RunService.Heartbeat:Wait()
+            task.wait(0.05)
         end
         
         if root:IsA("BasePart") and root.Parent then
@@ -1233,6 +1343,27 @@ local isRecording, setRecording = createToggle("Запись маршрута", 
 local isPlaying, setPlaying = createToggle("Воспроизведение маршрута", FarmTab)
 local routePoints = {}
 
+local preset3PointsBtn = Instance.new("TextButton")
+preset3PointsBtn.Size = UDim2.new(1, 0, 0, 30)
+preset3PointsBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 150)
+preset3PointsBtn.Text = "Загрузить маршрут по 3 точкам (Закуп -> Сдача -> Кейс)"
+preset3PointsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+preset3PointsBtn.Font = Enum.Font.GothamBold
+preset3PointsBtn.TextSize = 12
+preset3PointsBtn.Parent = FarmTab
+Instance.new("UICorner", preset3PointsBtn).CornerRadius = UDim.new(0, 6)
+
+connectSignal(preset3PointsBtn.MouseButton1Click, function()
+    routePoints = {
+        { type = "point3", pos = Vector3.new(680, 17, 19), action = "buy", desc = "Закуп 5 шт (E/У < 1с)", repeatCount = 5 },
+        { type = "point3", pos = Vector3.new(208, 17, -47), action = "interact1", desc = "Получить кейс (E/У < 1с)", repeatCount = 1 },
+        { type = "point3", pos = Vector3.new(6805, 17, -34), action = "interact1", desc = "Сдать кейс (E/У < 1с)", repeatCount = 1 }
+    }
+    if clearRouteBtn then
+        clearRouteBtn.Text = "Очистить маршрут (Точек: 3)"
+    end
+end)
+
 local clearRouteBtn = Instance.new("TextButton")
 clearRouteBtn.Size = UDim2.new(1, 0, 0, 30)
 clearRouteBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
@@ -1251,6 +1382,7 @@ end)
 local recordTimer = 0
 local playIndex = 1
 local playStuckTimer = 0
+local farmInteracting = false
 
 local ProximityPromptService = game:GetService("ProximityPromptService")
 connectSignal(ProximityPromptService.PromptTriggered, function(prompt, player)
@@ -1306,6 +1438,11 @@ connectSignal(RunService.Heartbeat, function(dt)
         local root = getCharRoot()
         local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
         if root and humanoid then
+            if farmInteracting then
+                humanoid:MoveTo(root.Position)
+                return
+            end
+            
             local currentPoint = routePoints[playIndex]
             local targetPos = currentPoint.pos
             local distXZ = (Vector3.new(root.Position.X, 0, root.Position.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
@@ -1322,16 +1459,17 @@ connectSignal(RunService.Heartbeat, function(dt)
                     end
                     playStuckTimer = playStuckTimer + dt
                     if playStuckTimer > 2 then
-                        playIndex = playIndex + 1
-                        if playIndex > #routePoints then playIndex = 1 end
+                        humanoid.Jump = true
                         playStuckTimer = 0
                     end
                 end
             elseif currentPoint.type == "interact" then
                 if distXZ < 10 then
+                    farmInteracting = true
+                    humanoid:MoveTo(root.Position)
                     if currentPoint.prompt and currentPoint.prompt.Parent then
                         task.spawn(function()
-                            for i = 1, 5 do
+                            for i = 1, 3 do
                                 if fireproximityprompt then
                                     fireproximityprompt(currentPoint.prompt)
                                 else
@@ -1341,11 +1479,17 @@ connectSignal(RunService.Heartbeat, function(dt)
                                 end
                                 task.wait(0.2)
                             end
+                            playIndex = playIndex + 1
+                            if playIndex > #routePoints then playIndex = 1 end
+                            playStuckTimer = 0
+                            farmInteracting = false
                         end)
+                    else
+                        playIndex = playIndex + 1
+                        if playIndex > #routePoints then playIndex = 1 end
+                        playStuckTimer = 0
+                        farmInteracting = false
                     end
-                    playIndex = playIndex + 1
-                    if playIndex > #routePoints then playIndex = 1 end
-                    playStuckTimer = 0
                 else
                     humanoid:MoveTo(targetPos)
                     if targetPos.Y - root.Position.Y > 2 then
@@ -1353,16 +1497,17 @@ connectSignal(RunService.Heartbeat, function(dt)
                     end
                     playStuckTimer = playStuckTimer + dt
                     if playStuckTimer > 2 then
-                        playIndex = playIndex + 1
-                        if playIndex > #routePoints then playIndex = 1 end
+                        humanoid.Jump = true
                         playStuckTimer = 0
                     end
                 end
             elseif currentPoint.type == "remote" then
                 if distXZ < 10 then
+                    farmInteracting = true
+                    humanoid:MoveTo(root.Position)
                     if currentPoint.instance and currentPoint.instance.Parent then
                         task.spawn(function()
-                            for i = 1, 5 do
+                            for i = 1, 3 do
                                 pcall(function()
                                     if currentPoint.method == "FireServer" then
                                         currentPoint.instance:FireServer(unpack(currentPoint.args))
@@ -1372,11 +1517,17 @@ connectSignal(RunService.Heartbeat, function(dt)
                                 end)
                                 task.wait(0.2)
                             end
+                            playIndex = playIndex + 1
+                            if playIndex > #routePoints then playIndex = 1 end
+                            playStuckTimer = 0
+                            farmInteracting = false
                         end)
+                    else
+                        playIndex = playIndex + 1
+                        if playIndex > #routePoints then playIndex = 1 end
+                        playStuckTimer = 0
+                        farmInteracting = false
                     end
-                    playIndex = playIndex + 1
-                    if playIndex > #routePoints then playIndex = 1 end
-                    playStuckTimer = 0
                 else
                     humanoid:MoveTo(targetPos)
                     if targetPos.Y - root.Position.Y > 2 then
@@ -1384,8 +1535,52 @@ connectSignal(RunService.Heartbeat, function(dt)
                     end
                     playStuckTimer = playStuckTimer + dt
                     if playStuckTimer > 2 then
+                        humanoid.Jump = true
+                        playStuckTimer = 0
+                    end
+                end
+            elseif currentPoint.type == "point3" then
+                if distXZ < 6 then
+                    farmInteracting = true
+                    humanoid:MoveTo(root.Position)
+                    task.spawn(function()
+                        local repeats = currentPoint.repeatCount or 1
+                        for r = 1, repeats do
+                            pcall(function()
+                                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                                if hrp then
+                                    for _, prompt in ipairs(Workspace:GetDescendants()) do
+                                        if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                                            local pPart = prompt.Parent
+                                            if pPart and pPart:IsA("BasePart") and (pPart.Position - hrp.Position).Magnitude < 15 then
+                                                if fireproximityprompt then
+                                                    fireproximityprompt(prompt)
+                                                else
+                                                    prompt:InputHoldBegin()
+                                                    task.wait(0.3)
+                                                    prompt:InputHoldEnd()
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end)
+                            if repeats > 1 then task.wait(0.5) end
+                        end
+                        
                         playIndex = playIndex + 1
                         if playIndex > #routePoints then playIndex = 1 end
+                        playStuckTimer = 0
+                        farmInteracting = false
+                    end)
+                else
+                    humanoid:MoveTo(targetPos)
+                    if targetPos.Y - root.Position.Y > 2 then
+                        humanoid.Jump = true
+                    end
+                    playStuckTimer = playStuckTimer + dt
+                    if playStuckTimer > 3 then
+                        humanoid.Jump = true
                         playStuckTimer = 0
                     end
                 end
@@ -1394,6 +1589,7 @@ connectSignal(RunService.Heartbeat, function(dt)
     else
         playIndex = 1
         playStuckTimer = 0
+        farmInteracting = false
     end
 end)
 
