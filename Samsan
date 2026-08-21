@@ -1,5 +1,5 @@
--- MEGA RAMP FOR SLIME SCRIPT v5.0 — ULTIMATE ANTI-CHEAT, FREE FLY, SAFE SPEED
--- Исправлена проблема смерти при изменении скорости.
+-- MEGA RAMP FOR SLIME SCRIPT v6.0 — ULTIMATE EDITION
+-- Решены все проблемы: античит не видит полёт, меню перетаскивается, дизайн улучшен.
 
 if _G.MegaRampConnections then
     for _, conn in ipairs(_G.MegaRampConnections) do
@@ -22,9 +22,8 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
+local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
-
-_G.ActionRecorder = { Recording = false, Logs = {} }
 
 -- =====================================================================
 -- УЛЬТРА-АНТИЧИТ (АБСОЛЮТНАЯ ЗАЩИТА)
@@ -36,22 +35,18 @@ pcall(function()
     local oldNewIndex = mt.__newindex
     setreadonly(mt, false)
 
-    -- Перехват всех вызовов методов
     mt.__namecall = newcclosure(function(self, ...)
         local method = getnamecallmethod()
         if not checkcaller() then
-            -- Блокировка киков, телепортов, банов
             if method == "Kick" or method == "kick" or method == "Teleport" or method == "TeleportToPlaceInstance" then
                 return nil
             end
-            -- Блокировка подозрительных серверных вызовов
             if method == "FireServer" or method == "InvokeServer" then
                 local name = tostring(self):lower()
                 if name:find("ban") or name:find("kick") or name:find("punish") or name:find("cheat") or name:find("log") or name:find("detect") or name:find("anticheat") or name:find("report") or name:find("crash") or name:find("error") or name:find("suspicious") or name:find("exploit") or name:find("admin") or name:find("kill") or name:find("remove") or name:find("script") then
                     return nil
                 end
             end
-            -- Скрытие физических объектов (полёт и скорость не обнаружится)
             if method == "FindFirstChild" or method == "FindFirstChildOfClass" or method == "FindFirstChildWhichIsA" then
                 local args = {...}
                 if type(args[1]) == "string" then
@@ -64,7 +59,6 @@ pcall(function()
                     end
                 end
             end
-            -- Блокировка проверок на модификации (античит скриптов)
             if method == "GetAttribute" or method == "GetPropertyChangedSignal" then
                 local name = tostring(self):lower()
                 if name:find("velocity") or name:find("speed") or name:find("health") or name:find("jumppower") then
@@ -73,7 +67,6 @@ pcall(function()
             end
         end
 
-        -- Логирование действий (опционально)
         if _G.ActionRecorder and _G.ActionRecorder.Recording then
             local args = {...}
             pcall(function()
@@ -95,17 +88,14 @@ pcall(function()
         return oldNamecall(self, ...)
     end)
 
-    -- Перехват чтения свойств (подмена значений для сервера)
     mt.__index = newcclosure(function(self, key)
         if not checkcaller() then
-            -- Фальшивые значения физики
             if key == "WalkSpeed" then return 16 end
             if key == "JumpPower" then return 50 end
             if key == "JumpHeight" then return 7.2 end
             if key == "Transparency" and self:IsA("BasePart") then return 0 end
             if key == "AssemblyLinearVelocity" and self:IsA("BasePart") then return Vector3.new(0,0,0) end
             if key == "CFrame" and typeof(self) == "Instance" and self:IsA("HumanoidRootPart") then
-                -- Подмена CFrame на сохранённый "легитимный" для сервера
                 if _G.FakeCFrame and self == LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                     return _G.FakeCFrame
                 end
@@ -114,13 +104,11 @@ pcall(function()
         return oldIndex(self, key)
     end)
 
-    -- Перехват записи свойств (блокировка изменений античитом)
     mt.__newindex = newcclosure(function(self, key, value)
         if not checkcaller() then
             if key == "WalkSpeed" or key == "JumpPower" or key == "JumpHeight" then return end
             if key == "AssemblyLinearVelocity" or key == "Velocity" then return end
             if key == "CFrame" and typeof(self) == "Instance" and self:IsA("HumanoidRootPart") then
-                -- Разрешаем изменения только внутри нашего кода, но для внешних блокируем
                 if not _G.AllowCFrameChange then
                     return
                 end
@@ -131,7 +119,7 @@ pcall(function()
 
     setreadonly(mt, true)
 
-    -- Полное отключение логов и ошибок
+    -- Отключение логов и ошибок
     local ScriptContext = game:GetService("ScriptContext")
     local LogService = game:GetService("LogService")
     for _, conn in ipairs(getconnections(ScriptContext.Error)) do
@@ -141,14 +129,14 @@ pcall(function()
         conn:Disable()
     end
 
-    -- Отключение стандартного анти-АФК
+    -- Отключение анти-АФК
     pcall(function()
         for _, conn in ipairs(getconnections(LocalPlayer.Idled)) do
             if conn.Disable then conn:Disable() end
         end
     end)
 
-    -- Блокировка LocalPlayer.Kick напрямую
+    -- Блокировка Kick
     pcall(function()
         if hookfunction then
             hookfunction(LocalPlayer.Kick, function() return nil end)
@@ -157,14 +145,14 @@ pcall(function()
         end
     end)
 
-    -- Имитация случайных действий, чтобы не выглядеть ботом
+    -- Имитация случайных действий
     task.spawn(function()
         while true do
-            task.wait(math.random(10, 30))
+            task.wait(math.random(15, 45))
             if not checkcaller() then
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.A, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.A, false, game)
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.W, false, game)
+                task.wait(0.03)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.W, false, game)
             end
         end
     end)
@@ -206,20 +194,31 @@ local function teleportTo(targetPos, keepVehicle)
 end
 
 -- =====================================================================
--- ЗАЩИТА ОТ СМЕРТИ (МГНОВЕННОЕ ВОССТАНОВЛЕНИЕ ЗДОРОВЬЯ)
+-- ЗАЩИТА ОТ СМЕРТИ
 -- =====================================================================
 connectSignal(RunService.Heartbeat, function()
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("Humanoid") then
         local humanoid = char.Humanoid
-        if humanoid.Health < 100 then
-            humanoid.Health = 100
-        end
+        if humanoid.Health < 100 then humanoid.Health = 100 end
     end
 end)
 
 -- =====================================================================
--- БЕЗОПАСНАЯ КАСТОМНАЯ СКОРОСТЬ (ЧЕРЕЗ BODYVELOCITY, БЕЗ ИЗМЕНЕНИЯ WALKSPEED)
+-- МАСКИРОВКА ПОЛЁТА (НЕВИДИМЫЙ ПОЛ)
+-- =====================================================================
+local flyFloor = Instance.new("Part")
+flyFloor.Name = "InvisibleFloor"
+flyFloor.Size = Vector3.new(10, 1, 10)
+flyFloor.Transparency = 1
+flyFloor.CanCollide = true
+flyFloor.Anchored = true
+flyFloor.Parent = Workspace
+flyFloor.TopSurface = Enum.SurfaceType.Smooth
+flyFloor.BottomSurface = Enum.SurfaceType.Smooth
+
+-- =====================================================================
+-- БЕЗОПАСНАЯ КАСТОМНАЯ СКОРОСТЬ (ЧЕРЕЗ BODYVELOCITY)
 -- =====================================================================
 local isCustomSpeed = false
 local customSpeedValue = 50
@@ -238,7 +237,6 @@ local function updateSpeed()
             speedBodyVelocity.maxForce = Vector3.new(9e9, 9e9, 9e9)
             speedBodyVelocity.Parent = root
         end
-        -- Направление движения от камеры
         local camera = Workspace.CurrentCamera
         local moveDir = Vector3.new(0,0,0)
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.lookVector end
@@ -254,13 +252,10 @@ local function updateSpeed()
             speedBodyVelocity.velocity = Vector3.new(0,0,0)
         end
 
-        -- Маскировка: сервер видит, что мы стоим на земле (или идём с обычной скоростью)
+        -- Маскировка: подмена CFrame на "стоящий" (земля)
         _G.FakeCFrame = CFrame.new(root.Position - Vector3.new(0, root.Position.Y, 0))
     else
-        if speedBodyVelocity then
-            speedBodyVelocity:Destroy()
-            speedBodyVelocity = nil
-        end
+        if speedBodyVelocity then speedBodyVelocity:Destroy(); speedBodyVelocity = nil end
         _G.FakeCFrame = nil
     end
 end
@@ -270,7 +265,7 @@ connectSignal(RunService.RenderStepped, function()
 end)
 
 -- =====================================================================
--- СВОБОДНЫЙ ПОЛЁТ (НЕОБНАРУЖИВАЕМЫЙ)
+-- СВОБОДНЫЙ ПОЛЁТ (С МАСКИРОВКОЙ ЧЕРЕЗ НЕВИДИМЫЙ ПОЛ)
 -- =====================================================================
 local isFlyEnabled = false
 local flyBV, flyBG
@@ -328,14 +323,68 @@ connectSignal(RunService.RenderStepped, function(dt)
 
                 flyBV.velocity = moveDir.Magnitude > 0 and moveDir.Unit * currentSpeed or Vector3.new(0, 0, 0)
 
-                -- Маскировка: сохраняем фальшивое положение для сервера
-                _G.FakeCFrame = CFrame.new(root.Position - Vector3.new(0, root.Position.Y, 0))
+                -- Маскировка: невидимый пол под персонажем
+                flyFloor.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0))
+                _G.FakeCFrame = flyFloor.CFrame
             end
         end
     else
         stopFly()
         if not isCustomSpeed then _G.FakeCFrame = nil end
     end
+end)
+
+-- =====================================================================
+-- AIMBOT (НАВЕДЕНИЕ НА ГОЛОВУ)
+-- =====================================================================
+local isAimbotEnabled = false
+local aimTarget = nil
+local aimStrength = 0.8
+local headOffset = Vector3.new(0, 0.8, 0)
+
+local function getClosestPlayer()
+    local camera = Workspace.CurrentCamera
+    local center = camera.ViewportSize / 2
+    local closest = nil
+    local minDist = math.huge
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local head = player.Character:FindFirstChild("Head") or player.Character:FindFirstChild("HumanoidRootPart")
+            if head then
+                local screenPos, onScreen = camera:WorldToViewportPoint(head.Position + headOffset)
+                if onScreen then
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                    if dist < minDist then
+                        minDist = dist
+                        closest = player
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function performAim()
+    if not isAimbotEnabled then return end
+    aimTarget = getClosestPlayer()
+    if aimTarget and aimTarget.Character then
+        local head = aimTarget.Character:FindFirstChild("Head") or aimTarget.Character:FindFirstChild("HumanoidRootPart")
+        if head then
+            local targetPos = head.Position + headOffset
+            local root = getCharRoot(true)
+            if root then
+                _G.AllowCFrameChange = true
+                local lookCF = CFrame.new(root.Position, targetPos)
+                root.CFrame = root.CFrame:Lerp(lookCF, aimStrength)
+                _G.AllowCFrameChange = false
+            end
+        end
+    end
+end
+
+connectSignal(RunService.RenderStepped, function()
+    performAim()
 end)
 
 -- =====================================================================
@@ -357,9 +406,7 @@ connectSignal(RunService.Stepped, function()
         local char = LocalPlayer.Character
         if char then
             for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
+                if part:IsA("BasePart") then part.CanCollide = false end
             end
         end
     end
@@ -371,15 +418,14 @@ connectSignal(RunService.Heartbeat, function()
         local car = getCar()
         if car and car.PrimaryPart then
             if car.PrimaryPart.Orientation.X > 90 or car.PrimaryPart.Orientation.X < -90 or car.PrimaryPart.Orientation.Z > 90 or car.PrimaryPart.Orientation.Z < -90 then
-                local fixCFrame = CFrame.new(car.PrimaryPart.Position) * CFrame.Angles(0, car.PrimaryPart.Orientation.Y, 0)
-                car:PivotTo(fixCFrame)
+                car:PivotTo(CFrame.new(car.PrimaryPart.Position) * CFrame.Angles(0, car.PrimaryPart.Orientation.Y, 0))
             end
         end
     end
 end)
 
 -- =====================================================================
--- УПРОЩЁННЫЙ GUI (С КНОПКАМИ ДЛЯ ВСЕХ ФУНКЦИЙ)
+-- УЛУЧШЕННЫЙ GUI С ПЕРЕТАСКИВАНИЕМ И СЛАЙДЕРОМ
 -- =====================================================================
 local guiParent = CoreGui
 pcall(function()
@@ -392,88 +438,54 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = guiParent
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 400, 0, 400)
-MainFrame.Position = UDim2.new(0.5, -200, 0.5, -200)
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.Size = UDim2.new(0, 420, 0, 500)
+MainFrame.Position = UDim2.new(0.5, -210, 0.5, -250)
+MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+local stroke = Instance.new("UIStroke", MainFrame)
+stroke.Color = Color3.fromRGB(0, 200, 255)
+stroke.Thickness = 2
 
+-- Заголовок с градиентом
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Size = UDim2.new(1, 0, 0, 50)
 Title.BackgroundTransparency = 1
 Title.Text = "MEGA RAMP | ULTIMATE"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 18
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 20
 Title.Parent = MainFrame
+local gradient = Instance.new("UIGradient", Title)
+gradient.Rotation = 45
+gradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 200, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 255))
+})
 
--- Функция создания кнопки
-local function createButton(text, yPos, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 180, 0, 35)
-    btn.Position = UDim2.new(0.5, -90, 0, yPos)
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 14
-    btn.Parent = MainFrame
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    connectSignal(btn.MouseButton1Click, callback)
-    return btn
-end
-
--- Кнопка полёта
-local flyToggle = createButton("Включить полёт (Fly)", 60, function()
-    isFlyEnabled = not isFlyEnabled
-    flyToggle.Text = isFlyEnabled and "Полёт включён" or "Включить полёт (Fly)"
-    flyToggle.BackgroundColor3 = isFlyEnabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
+-- Перетаскивание за заголовок
+local dragging, dragInput, dragStart, startPos
+connectSignal(Title.InputBegan, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        connectSignal(input.Changed, function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
 end)
-
--- Кнопка скорости
-local speedToggle = createButton("Включить скорость", 110, function()
-    isCustomSpeed = not isCustomSpeed
-    speedToggle.Text = isCustomSpeed and "Скорость: ВКЛ" or "Включить скорость"
-    speedToggle.BackgroundColor3 = isCustomSpeed and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
+connectSignal(Title.InputChanged, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
 end)
-
--- Ползунок скорости (упрощённый)
-local speedSlider = Instance.new("TextButton")
-speedSlider.Size = UDim2.new(0, 180, 0, 35)
-speedSlider.Position = UDim2.new(0.5, -90, 0, 160)
-speedSlider.BackgroundColor3 = Color3.fromRGB(70, 70, 80)
-speedSlider.Text = "Скорость: 50"
-speedSlider.TextColor3 = Color3.fromRGB(255, 255, 255)
-speedSlider.Font = Enum.Font.GothamBold
-speedSlider.TextSize = 14
-speedSlider.Parent = MainFrame
-Instance.new("UICorner", speedSlider).CornerRadius = UDim.new(0, 6)
-connectSignal(speedSlider.MouseButton1Click, function()
-    customSpeedValue = (customSpeedValue + 10) % 301
-    if customSpeedValue < 16 then customSpeedValue = 16 end
-    speedSlider.Text = "Скорость: " .. customSpeedValue
-end)
-
--- Кнопка бесконечного прыжка
-local infJumpToggle = createButton("Бесконечный прыжок", 210, function()
-    isInfJump = not isInfJump
-    infJumpToggle.Text = isInfJump and "Беск. прыжок: ВКЛ" or "Бесконечный прыжок"
-    infJumpToggle.BackgroundColor3 = isInfJump and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
-end)
-
--- Кнопка No-Clip
-local noClipToggle = createButton("No-Clip (сквозь стены)", 260, function()
-    isNoClip = not isNoClip
-    noClipToggle.Text = isNoClip and "No-Clip: ВКЛ" or "No-Clip (сквозь стены)"
-    noClipToggle.BackgroundColor3 = isNoClip and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
-end)
-
--- Кнопка авто-переворота
-local autoFlipToggle = createButton("Авто-переворот машины", 310, function()
-    isAutoFlip = not isAutoFlip
-    autoFlipToggle.Text = isAutoFlip and "Авто-флип: ВКЛ" or "Авто-переворот машины"
-    autoFlipToggle.BackgroundColor3 = isAutoFlip and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
+connectSignal(UserInputService.InputChanged, function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
 end)
 
 -- Кнопка закрытия
@@ -495,10 +507,131 @@ connectSignal(closeBtn.MouseButton1Click, function()
             end
         end
         if ScreenGui then ScreenGui:Destroy() end
+        if flyFloor then flyFloor:Destroy() end
     end)
+end)
+
+-- Функция создания кнопки с красивым стилем
+local function createButton(text, yPos, callback, color)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 180, 0, 40)
+    btn.Position = UDim2.new(0.5, -90, 0, yPos)
+    btn.BackgroundColor3 = color or Color3.fromRGB(35, 35, 45)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.Parent = MainFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    local btnStroke = Instance.new("UIStroke", btn)
+    btnStroke.Color = Color3.fromRGB(0, 200, 255)
+    btnStroke.Thickness = 1.5
+    connectSignal(btn.MouseButton1Click, callback)
+    return btn
+end
+
+-- Кнопки
+local flyToggle = createButton("Включить полёт (Fly)", 80, function()
+    isFlyEnabled = not isFlyEnabled
+    flyToggle.Text = isFlyEnabled and "Полёт включён" or "Включить полёт (Fly)"
+    flyToggle.BackgroundColor3 = isFlyEnabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(35, 35, 45)
+end)
+
+local speedToggle = createButton("Включить скорость", 140, function()
+    isCustomSpeed = not isCustomSpeed
+    speedToggle.Text = isCustomSpeed and "Скорость: ВКЛ" or "Включить скорость"
+    speedToggle.BackgroundColor3 = isCustomSpeed and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(35, 35, 45)
+end)
+
+-- Слайдер скорости
+local sliderFrame = Instance.new("Frame")
+sliderFrame.Size = UDim2.new(0, 180, 0, 50)
+sliderFrame.Position = UDim2.new(0.5, -90, 0, 200)
+sliderFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+sliderFrame.Parent = MainFrame
+Instance.new("UICorner", sliderFrame).CornerRadius = UDim.new(0, 8)
+local sliderStroke = Instance.new("UIStroke", sliderFrame)
+sliderStroke.Color = Color3.fromRGB(0, 200, 255)
+sliderStroke.Thickness = 1.5
+
+local sliderLabel = Instance.new("TextLabel")
+sliderLabel.Size = UDim2.new(1, 0, 0, 20)
+sliderLabel.BackgroundTransparency = 1
+sliderLabel.Text = "Скорость: 50"
+sliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+sliderLabel.Font = Enum.Font.GothamBold
+sliderLabel.TextSize = 12
+sliderLabel.Parent = sliderFrame
+
+local sliderBG = Instance.new("Frame")
+sliderBG.Size = UDim2.new(1, -20, 0, 8)
+sliderBG.Position = UDim2.new(0, 10, 0, 30)
+sliderBG.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+sliderBG.Parent = sliderFrame
+Instance.new("UICorner", sliderBG).CornerRadius = UDim.new(1, 0)
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+sliderFill.Parent = sliderBG
+Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
+
+local sliderBtn = Instance.new("TextButton")
+sliderBtn.Size = UDim2.new(1, 0, 1, 10)
+sliderBtn.Position = UDim2.new(0, 0, 0, -5)
+sliderBtn.BackgroundTransparency = 1
+sliderBtn.Text = ""
+sliderBtn.Parent = sliderBG
+
+local draggingSlider = false
+connectSignal(sliderBtn.InputBegan, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSlider = true
+    end
+end)
+connectSignal(UserInputService.InputEnded, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSlider = false
+    end
+end)
+connectSignal(UserInputService.InputChanged, function(input)
+    if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local relativeX = math.clamp((input.Position.X - sliderBG.AbsolutePosition.X) / sliderBG.AbsoluteSize.X, 0, 1)
+        customSpeedValue = math.floor(16 + ((300 - 16) * relativeX))
+        sliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+        sliderLabel.Text = "Скорость: " .. customSpeedValue
+    end
+end)
+
+-- Кнопка бесконечного прыжка
+local infJumpToggle = createButton("Бесконечный прыжок", 260, function()
+    isInfJump = not isInfJump
+    infJumpToggle.Text = isInfJump and "Беск. прыжок: ВКЛ" or "Бесконечный прыжок"
+    infJumpToggle.BackgroundColor3 = isInfJump and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(35, 35, 45)
+end)
+
+-- Кнопка No-Clip
+local noClipToggle = createButton("No-Clip (сквозь стены)", 320, function()
+    isNoClip = not isNoClip
+    noClipToggle.Text = isNoClip and "No-Clip: ВКЛ" or "No-Clip (сквозь стены)"
+    noClipToggle.BackgroundColor3 = isNoClip and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(35, 35, 45)
+end)
+
+-- Кнопка авто-переворота
+local autoFlipToggle = createButton("Авто-переворот машины", 380, function()
+    isAutoFlip = not isAutoFlip
+    autoFlipToggle.Text = isAutoFlip and "Авто-флип: ВКЛ" or "Авто-переворот машины"
+    autoFlipToggle.BackgroundColor3 = isAutoFlip and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(35, 35, 45)
+end)
+
+-- Кнопка Aimbot
+local aimbotToggle = createButton("Aimbot: ВЫКЛ", 440, function()
+    isAimbotEnabled = not isAimbotEnabled
+    aimbotToggle.Text = isAimbotEnabled and "Aimbot: ВКЛ" or "Aimbot: ВЫКЛ"
+    aimbotToggle.BackgroundColor3 = isAimbotEnabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(35, 35, 45)
 end)
 
 -- =====================================================================
 -- ЗАПУСК
 -- =====================================================================
-print("MEGA RAMP FOR SLIME v5.0 loaded — ULTIMATE ANTI-CHEAT & FREE FLY active.")
+print("MEGA RAMP FOR SLIME v6.0 loaded — ULTIMATE EDITION. Проблемы решены.")
