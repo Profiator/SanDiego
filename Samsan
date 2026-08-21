@@ -1,1121 +1,128 @@
--- САН ДИЕГО (УНИВЕРСАЛЬНЫЙ СКРИПТ)
+-- MEGA RAMP FOR SLIME SCRIPT v5.0 — ULTIMATE ANTI-CHEAT, FREE FLY, SAFE SPEED
+-- Исправлена проблема смерти при изменении скорости.
 
-_G.SanDiegoActive = true
-local espHighlights = {}
-
--- Убийца клиентских античитов
-pcall(function()
-    local Players = game:GetService("Players")
-    local LocalPlayer = Players.LocalPlayer
-    for _, v in ipairs(LocalPlayer:GetDescendants()) do
-        if v:IsA("LocalScript") then
-            local name = string.lower(v.Name)
-            if string.find(name, "anti") or string.find(name, "cheat") or string.find(name, "protect") or string.find(name, "security") or string.find(name, "detect") or string.find(name, "speed") or string.find(name, "fly") or string.find(name, "tp") then
-                pcall(function() v.Disabled = true end)
-                pcall(function() v:Destroy() end)
-            end
-        end
-    end
-end)
-
-if _G.SanDiegoConnections then
-    for _, conn in ipairs(_G.SanDiegoConnections) do
+if _G.MegaRampConnections then
+    for _, conn in ipairs(_G.MegaRampConnections) do
         pcall(function() if conn and conn.Connected then conn:Disconnect() end end)
     end
 end
-_G.SanDiegoConnections = {}
+_G.MegaRampConnections = {}
 
 local function connectSignal(signal, callback)
     local conn = signal:Connect(callback)
-    table.insert(_G.SanDiegoConnections, conn)
+    table.insert(_G.MegaRampConnections, conn)
     return conn
 end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
-
-local _farmState = { isRecording = false, routePoints = {}, clearBtn = nil }
-
 local LocalPlayer = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
-local Mouse = LocalPlayer:GetMouse()
 
-local guiParent = CoreGui
-pcall(function() if gethui then guiParent = gethui() end end)
+_G.ActionRecorder = { Recording = false, Logs = {} }
 
-local function getCharRoot(preferVehicle)
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    local humanoid = char:FindFirstChild("Humanoid")
-    if preferVehicle and humanoid and humanoid.SeatPart and humanoid.SeatPart:IsA("VehicleSeat") then
-        local vehicle = humanoid.SeatPart:FindFirstAncestorWhichIsA("Model")
-        if vehicle and vehicle.PrimaryPart then
-            return vehicle.PrimaryPart
-        end
-        return humanoid.SeatPart
-    end
-    return char:FindFirstChild("HumanoidRootPart")
-end
-
-local isCustomSpeed = function() return false end
-local isFlyEnabled = function() return false end
-local speedHoldActive = false
-local isFarmPlaying = false
-local isTPing = false
-
-local legitPosition = nil
-connectSignal(RunService.Heartbeat, function(dt)
-    local hrp = getCharRoot()
-    if hrp then
-        if not legitPosition then
-            legitPosition = hrp.Position
-        else
-            if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing then
-                local dist = (hrp.Position - legitPosition).Magnitude
-                local maxMove = 28 * dt -- Safe speed limit to bypass AC (28 studs/sec)
-                if dist > maxMove then
-                    legitPosition = legitPosition + (hrp.Position - legitPosition).Unit * maxMove
-                else
-                    legitPosition = hrp.Position
-                end
-            else
-                legitPosition = hrp.Position
-            end
-        end
-    end
-end)
-
--- === АНТИЧИТ ОБХОД (ПЛАТФОРМА ДЛЯ АНТИ-ФЛАЯ) ===
-local flyPlatform = Instance.new("Part")
-flyPlatform.Size = Vector3.new(30, 1, 30)
-flyPlatform.Transparency = 0.4
-flyPlatform.Anchored = true
-flyPlatform.CanCollide = true
-flyPlatform.Material = Enum.Material.SmoothPlastic
-flyPlatform.Name = "SanDiegoPlatform"
-pcall(function() flyPlatform.Parent = Workspace end)
-
--- === UI SETUP ===
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SanDiegoUI_" .. tostring(math.random(100000, 999999))
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-
-pcall(function()
-    if syn and syn.protect_gui then
-        syn.protect_gui(ScreenGui)
-    elseif protectgui then
-        protectgui(ScreenGui)
-    end
-end)
-
-ScreenGui.Parent = guiParent
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 500, 0, 480)
-MainFrame.Position = UDim2.new(0.5, -250, 0.5, -240)
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = true
-MainFrame.Parent = ScreenGui
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 10)
-UICorner.Parent = MainFrame
-
-local UIStroke = Instance.new("UIStroke")
-UIStroke.Color = Color3.fromRGB(50, 50, 60)
-UIStroke.Thickness = 2
-UIStroke.Parent = MainFrame
-
-local Topbar = Instance.new("Frame")
-Topbar.Size = UDim2.new(1, 0, 0, 40)
-Topbar.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-Topbar.BorderSizePixel = 0
-Topbar.Parent = MainFrame
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -170, 1, 0)
-Title.Position = UDim2.new(0, 15, 0, 0)
-Title.BackgroundTransparency = 1
-Title.Text = "САН ДИЕГО"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 16
-Title.Font = Enum.Font.GothamBold
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = Topbar
-
-local MinimizeBtn = Instance.new("TextButton")
-MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
-MinimizeBtn.Position = UDim2.new(1, -75, 0, 5)
-MinimizeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-MinimizeBtn.Text = "-"
-MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeBtn.Font = Enum.Font.GothamBold
-MinimizeBtn.TextSize = 20
-MinimizeBtn.Parent = Topbar
-Instance.new("UICorner", MinimizeBtn).CornerRadius = UDim.new(0, 6)
-
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-CloseBtn.Position = UDim2.new(1, -35, 0, 5)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 16
-CloseBtn.Parent = Topbar
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
-
-local dragging, dragInput, dragStart, startPos
-connectSignal(Topbar.InputBegan, function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        connectSignal(input.Changed, function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
-        end)
-    end
-end)
-connectSignal(Topbar.InputChanged, function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-connectSignal(UserInputService.InputChanged, function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
-local isMinimized = false
-connectSignal(MinimizeBtn.MouseButton1Click, function()
-    isMinimized = not isMinimized
-    MainFrame.Size = isMinimized and UDim2.new(0, 500, 0, 40) or UDim2.new(0, 500, 0, 480)
-end)
-
-connectSignal(CloseBtn.MouseButton1Click, function()
-    _G.SanDiegoActive = false
-    if _G.SanDiegoConnections then
-        for _, conn in ipairs(_G.SanDiegoConnections) do
-            pcall(function() if conn and conn.Connected then conn:Disconnect() end end)
-        end
-        _G.SanDiegoConnections = {}
-    end
-    if flyPlatform then flyPlatform:Destroy() end
-    if ScreenGui then ScreenGui:Destroy() end
-    for player, hl in pairs(espHighlights) do
-        if hl and hl.Parent then hl:Destroy() end
-    end
-    table.clear(espHighlights)
-    
-    pcall(function()
-        local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChild("Humanoid")
-            if hum then
-                hum.WalkSpeed = 16
-                hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-            end
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.AssemblyLinearVelocity = Vector3.zero
-            end
-        end
-    end)
-end)
-
-local Container = Instance.new("ScrollingFrame")
-Container.Size = UDim2.new(1, -30, 1, -95)
-Container.Position = UDim2.new(0, 15, 0, 85)
-Container.BackgroundTransparency = 1
-Container.ScrollBarThickness = 5
-Container.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Container.CanvasSize = UDim2.new(0, 0, 0, 0)
-Container.Parent = MainFrame
-
-local TabsFrame = Instance.new("Frame")
-TabsFrame.Size = UDim2.new(1, 0, 0, 40)
-TabsFrame.Position = UDim2.new(0, 0, 0, 40)
-TabsFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-TabsFrame.BorderSizePixel = 0
-TabsFrame.Parent = MainFrame
-
-local TabContainer = Instance.new("ScrollingFrame")
-TabContainer.Size = UDim2.new(1, -20, 1, 0)
-TabContainer.Position = UDim2.new(0, 10, 0, 0)
-TabContainer.BackgroundTransparency = 1
-TabContainer.ScrollBarThickness = 0
-TabContainer.CanvasSize = UDim2.new(2, 0, 0, 0)
-TabContainer.Parent = TabsFrame
-
-local TabListLayout = Instance.new("UIListLayout")
-TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-TabListLayout.FillDirection = Enum.FillDirection.Horizontal
-TabListLayout.Padding = UDim.new(0, 10)
-TabListLayout.Parent = TabContainer
-
-local activeTab = nil
-local function createTab(name)
-    local TabBtn = Instance.new("TextButton")
-    TabBtn.Size = UDim2.new(0, 100, 1, -10)
-    TabBtn.Position = UDim2.new(0, 0, 0, 5)
-    TabBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-    TabBtn.Text = name
-    TabBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    TabBtn.Font = Enum.Font.GothamBold
-    TabBtn.TextSize = 12
-    TabBtn.Parent = TabContainer
-    Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 6)
-    
-    local TabContent = Instance.new("Frame")
-    TabContent.Size = UDim2.new(1, 0, 1, 0)
-    TabContent.BackgroundTransparency = 1
-    TabContent.Visible = false
-    TabContent.Parent = Container
-
-    local ContentLayout = Instance.new("UIListLayout")
-    ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    ContentLayout.Padding = UDim.new(0, 10)
-    ContentLayout.Parent = TabContent
-
-    connectSignal(TabBtn.MouseButton1Click, function()
-        for _, child in ipairs(Container:GetChildren()) do
-            if child:IsA("Frame") and child ~= TabContent then
-                child.Visible = false
-            end
-        end
-        for _, child in ipairs(TabContainer:GetChildren()) do
-            if child:IsA("TextButton") then
-                child.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-                child.TextColor3 = Color3.fromRGB(200, 200, 200)
-            end
-        end
-        TabContent.Visible = true
-        TabBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-        TabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        
-        task.wait(0.1)
-        Container.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 20)
-    end)
-    
-    if not activeTab then
-        activeTab = TabBtn
-        TabContent.Visible = true
-        TabBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-        TabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    end
-    return TabContent
-end
-
-local function createLabel(text, parent)
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(1, 0, 0, 25)
-    Label.BackgroundTransparency = 1
-    Label.Text = "  " .. text
-    Label.TextColor3 = Color3.fromRGB(200, 200, 200)
-    Label.TextSize = 14
-    Label.Font = Enum.Font.GothamBold
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = parent
-    return Label
-end
-
-local function createToggle(text, parent, defaultState)
-    local toggleState = defaultState or false
-    local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(1, 0, 0, 40)
-    Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-    Frame.Parent = parent
-    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 6)
-
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(1, -60, 1, 0)
-    Label.Position = UDim2.new(0, 10, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text
-    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Label.TextSize = 14
-    Label.Font = Enum.Font.Gotham
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = Frame
-
-    local Button = Instance.new("TextButton")
-    Button.Size = UDim2.new(0, 40, 0, 20)
-    Button.Position = UDim2.new(1, -50, 0.5, -10)
-    Button.BackgroundColor3 = toggleState and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
-    Button.Text = ""
-    Button.Parent = Frame
-    Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 10)
-
-    local Circle = Instance.new("Frame")
-    Circle.Size = UDim2.new(0, 16, 0, 16)
-    Circle.Position = toggleState and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-    Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Circle.Parent = Button
-    Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
-
-    local function setToggle(state)
-        toggleState = state
-        if toggleState then
-            Button.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-            Circle:TweenPosition(UDim2.new(1, -18, 0.5, -8), "Out", "Quad", 0.2, true)
-        else
-            Button.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-            Circle:TweenPosition(UDim2.new(0, 2, 0.5, -8), "Out", "Quad", 0.2, true)
-        end
-    end
-
-    connectSignal(Button.MouseButton1Click, function()
-        setToggle(not toggleState)
-    end)
-    return function() return toggleState and ScreenGui and ScreenGui.Parent ~= nil end, setToggle
-end
-
-local function createSlider(text, min, max, default, parent)
-    local value = default
-    local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(1, 0, 0, 60)
-    Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-    Frame.Parent = parent
-    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 6)
-
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(1, -10, 0, 30)
-    Label.Position = UDim2.new(0, 10, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text .. ": " .. value
-    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Label.TextSize = 14
-    Label.Font = Enum.Font.Gotham
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = Frame
-
-    local SliderBG = Instance.new("Frame")
-    SliderBG.Size = UDim2.new(1, -20, 0, 6)
-    SliderBG.Position = UDim2.new(0, 10, 0, 40)
-    SliderBG.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-    SliderBG.Parent = Frame
-    Instance.new("UICorner", SliderBG).CornerRadius = UDim.new(1, 0)
-
-    local SliderFill = Instance.new("Frame")
-    SliderFill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
-    SliderFill.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    SliderFill.Parent = SliderBG
-    Instance.new("UICorner", SliderFill).CornerRadius = UDim.new(1, 0)
-
-    local SliderBtn = Instance.new("TextButton")
-    SliderBtn.Size = UDim2.new(1, 0, 1, 10)
-    SliderBtn.Position = UDim2.new(0, 0, 0, -5)
-    SliderBtn.BackgroundTransparency = 1
-    SliderBtn.Text = ""
-    SliderBtn.Parent = SliderBG
-
-    local draggingSlider = false
-    connectSignal(SliderBtn.InputBegan, function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            draggingSlider = true
-        end
-    end)
-    connectSignal(UserInputService.InputEnded, function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            draggingSlider = false
-        end
-    end)
-    connectSignal(UserInputService.InputChanged, function(input)
-        if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local relativeX = math.clamp((input.Position.X - SliderBG.AbsolutePosition.X) / SliderBG.AbsoluteSize.X, 0, 1)
-            value = math.floor(min + ((max - min) * relativeX))
-            SliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
-            Label.Text = text .. ": " .. value
-        end
-    end)
-    return function() return value end
-end
-
--- === TABS ===
-local MainTab = createTab("ГЛАВНАЯ")
-local AimbotTab = createTab("АИМБОТ")
-local VisualsTab = createTab("ВИЗУАЛЫ")
-local TeleportsTab = createTab("ТЕЛЕПОРТЫ")
-
--- PROFILE
-createLabel("ПРОФИЛЬ", MainTab)
-local ProfileFrame = Instance.new("Frame")
-ProfileFrame.Size = UDim2.new(1, 0, 0, 70)
-ProfileFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-ProfileFrame.Parent = MainTab
-Instance.new("UICorner", ProfileFrame).CornerRadius = UDim.new(0, 6)
-
-local AvatarImage = Instance.new("ImageLabel")
-AvatarImage.Size = UDim2.new(0, 50, 0, 50)
-AvatarImage.Position = UDim2.new(0, 10, 0, 10)
-AvatarImage.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-AvatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150"
-AvatarImage.Parent = ProfileFrame
-Instance.new("UICorner", AvatarImage).CornerRadius = UDim.new(1, 0)
-
-local NameLabel = Instance.new("TextLabel")
-NameLabel.Size = UDim2.new(1, -80, 0, 20)
-NameLabel.Position = UDim2.new(0, 70, 0, 10)
-NameLabel.BackgroundTransparency = 1
-NameLabel.Text = LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")"
-NameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-NameLabel.Font = Enum.Font.GothamBold
-NameLabel.TextSize = 16
-NameLabel.TextXAlignment = Enum.TextXAlignment.Left
-NameLabel.Parent = ProfileFrame
-
-local CoordLabel = Instance.new("TextLabel")
-CoordLabel.Size = UDim2.new(1, -120, 0, 20)
-CoordLabel.Position = UDim2.new(0, 70, 0, 35)
-CoordLabel.BackgroundTransparency = 1
-CoordLabel.Text = "X: 0, Y: 0, Z: 0"
-CoordLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-CoordLabel.Font = Enum.Font.Gotham
-CoordLabel.TextSize = 14
-CoordLabel.TextXAlignment = Enum.TextXAlignment.Left
-CoordLabel.Parent = ProfileFrame
-
-connectSignal(RunService.RenderStepped, function()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        local pos = char.HumanoidRootPart.Position
-        CoordLabel.Text = string.format("X: %d, Y: %d, Z: %d", math.floor(pos.X), math.floor(pos.Y), math.floor(pos.Z))
-    end
-end)
-
--- ITEMS / MULTI-BUY
-createLabel("ВЗАИМОДЕЙСТВИЯ", MainTab)
-local isMultiInteract = createToggle("Мульти-покупка (Взлом лимитов)", MainTab)
-
-connectSignal(UserInputService.InputBegan, function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.E and isMultiInteract() then
-        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            for _, prompt in ipairs(Workspace:GetDescendants()) do
-                if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                    local part = prompt.Parent
-                    if part:IsA("VehicleSeat") or part:IsA("Seat") then continue end
-                    local actionLower = string.lower(prompt.ActionText)
-                    if string.match(actionLower, "sit") or string.match(actionLower, "drive") or string.match(actionLower, "enter") then continue end
-                    
-                    if part:IsA("BasePart") and (part.Position - hrp.Position).Magnitude <= (prompt.MaxActivationDistance * 1.5) then
-                        task.spawn(function()
-                            for i = 1, 30 do -- Spam interaction 30 times quickly
-                                if fireproximityprompt then
-                                    fireproximityprompt(prompt)
-                                else
-                                    prompt:InputHoldBegin()
-                                    task.wait()
-                                    prompt:InputHoldEnd()
-                                end
-                                task.wait()
-                            end
-                        end)
-                    end
-                end
-            end
-        end
-    end
-end)
-
--- FLY & SPEED
-createLabel("СКОРОСТЬ & ПОЛЕТ (ОБХОД АНТИЧИТА)", MainTab)
-isCustomSpeed = createToggle("Включить скорость", MainTab)
-local getSpeed = createSlider("Скорость", 16, 600, 100, MainTab)
-local isNoclipEnabled = createToggle("Панч/Проход сквозь стены (Noclip)", MainTab)
-isFlyEnabled, setFlyEnabled = createToggle("Свободный полет", MainTab)
-local isInfJump = createToggle("Бесконечный прыжок", MainTab)
-
-local lastGroundTime = tick()
-connectSignal(RunService.Heartbeat, function()
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChild("Humanoid")
-        if hum and hum.FloorMaterial ~= Enum.Material.Air then
-            lastGroundTime = tick()
-        end
-    end
-end)
-
-connectSignal(UserInputService.JumpRequest, function()
-    if isInfJump() then
-        if tick() - lastGroundTime <= 3 then
-            local char = LocalPlayer.Character
-            if char then
-                local humanoid = char:FindFirstChild("Humanoid")
-                if humanoid then
-                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                end
-            end
-        end
-    end
-end)
-
-local speedBindKey = nil
-local speedBindType = nil
-local isBindingSpeed = false
--- speedHoldActive already declared above
-
-local speedBindFrame = Instance.new("Frame")
-speedBindFrame.Size = UDim2.new(1, 0, 0, 40)
-speedBindFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-speedBindFrame.Parent = MainTab
-Instance.new("UICorner", speedBindFrame).CornerRadius = UDim.new(0, 6)
-
-local speedBindLabel = Instance.new("TextLabel")
-speedBindLabel.Size = UDim2.new(1, -120, 1, 0)
-speedBindLabel.Position = UDim2.new(0, 10, 0, 0)
-speedBindLabel.BackgroundTransparency = 1
-speedBindLabel.Text = "Кнопка скорости (Удержание)"
-speedBindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-speedBindLabel.Font = Enum.Font.Gotham
-speedBindLabel.TextSize = 14
-speedBindLabel.TextXAlignment = Enum.TextXAlignment.Left
-speedBindLabel.Parent = speedBindFrame
-
-local speedBindButton = Instance.new("TextButton")
-speedBindButton.Size = UDim2.new(0, 100, 0, 26)
-speedBindButton.Position = UDim2.new(1, -110, 0.5, -13)
-speedBindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-speedBindButton.Text = "НЕТ"
-speedBindButton.TextColor3 = Color3.fromRGB(0, 255, 150)
-speedBindButton.Font = Enum.Font.GothamBold
-speedBindButton.TextSize = 12
-speedBindButton.Parent = speedBindFrame
-Instance.new("UICorner", speedBindButton).CornerRadius = UDim.new(0, 4)
-
-connectSignal(speedBindButton.MouseButton1Click, function()
-    isBindingSpeed = true
-    speedBindButton.Text = "..."
-    speedBindButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-end)
-
-connectSignal(UserInputService.InputBegan, function(input, gpe)
-    if isBindingSpeed then
-        if input.UserInputType == Enum.UserInputType.Keyboard then
-            speedBindType = "Keyboard"
-            speedBindKey = input.KeyCode
-            speedBindButton.Text = speedBindKey.Name
-            speedBindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-            isBindingSpeed = false
-            return
-        elseif string.find(input.UserInputType.Name, "MouseButton") and input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-            speedBindType = "Mouse"
-            speedBindKey = input.UserInputType
-            speedBindButton.Text = string.gsub(speedBindKey.Name, "MouseButton", "MB")
-            speedBindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-            isBindingSpeed = false
-            return
-        end
-    end
-    if not gpe and speedBindKey then
-        if speedBindType == "Keyboard" and input.KeyCode == speedBindKey then
-            speedHoldActive = true
-        elseif speedBindType == "Mouse" and input.UserInputType == speedBindKey then
-            speedHoldActive = true
-        end
-    end
-end)
-
-connectSignal(UserInputService.InputEnded, function(input, gpe)
-    if not gpe and speedBindKey then
-        if speedBindType == "Keyboard" and input.KeyCode == speedBindKey then
-            speedHoldActive = false
-        elseif speedBindType == "Mouse" and input.UserInputType == speedBindKey then
-            speedHoldActive = false
-        end
-    end
-end)
-
--- isFarmPlaying already declared above
-local flying = false
-local flyActiveTime = 0
-local function handleFlyAndSpeed(deltaTime)
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    local humanoid = char:FindFirstChild("Humanoid")
-    local root = getCharRoot(true) -- Supports vehicles
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    
-    if not humanoid or not root then return end
-    
-    if isFlyEnabled() and root ~= hrp then
-        -- We are flying in a vehicle, disable jumping so space doesn't make us exit
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
-    else
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-    end
-
-    local currentSpeedActive = isCustomSpeed() or speedHoldActive or isFarmPlaying
-
-    -- Custom Speed Logic (Works for Walk & Vehicles)
-    if currentSpeedActive and not isFlyEnabled() then
-        if humanoid.SeatPart and humanoid.SeatPart:IsA("VehicleSeat") then
-            -- Vehicle Speed bypass
-            local seat = humanoid.SeatPart
-            if seat.Throttle ~= 0 then
-                local speedStr = isFarmPlaying and 600 or getSpeed()
-                local moveDir = root.CFrame.lookVector * seat.Throttle
-                root.AssemblyLinearVelocity = Vector3.new(
-                    moveDir.X * speedStr,
-                    root.AssemblyLinearVelocity.Y,
-                    moveDir.Z * speedStr
-                )
-            end
-        else
-            -- Character Speed
-            local speedStr = isFarmPlaying and 600 or getSpeed()
-            humanoid.WalkSpeed = 16
-            local moveDir = humanoid.MoveDirection
-            if moveDir.Magnitude > 0 then
-                local diff = speedStr - 16
-                if diff > 0 then
-                    -- Use AssemblyLinearVelocity instead of CFrame modification for speed to prevent freezing with Position spoofing
-                    local flatMoveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
-                    root.AssemblyLinearVelocity = Vector3.new(flatMoveDir.X * speedStr, root.AssemblyLinearVelocity.Y, flatMoveDir.Z * speedStr)
-                end
-            end
-        end
-    else
-        if not isFlyEnabled() and humanoid.WalkSpeed > 50 then
-            humanoid.WalkSpeed = 16
-        end
-    end
-
-    -- Noclip Logic
-    if isNoclipEnabled() then
-        pcall(function()
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") and part.CanCollide and part.Name ~= "HumanoidRootPart" and not string.find(part.Name, "Leg") and not string.find(part.Name, "Foot") then
-                    part.CanCollide = false
-                end
-            end
-        end)
-    end
-
-    -- Fly Logic
-    if isFlyEnabled() then
-        if not flying then
-            flying = true
-        end
-        
-        -- Move Solid Ground below player continuously to bypass AntiFly and ground checks
-        if flyPlatform then
-            local targetPos = hrp and hrp.Position or root.Position
-            if root ~= hrp then
-                targetPos = root.Position + Vector3.new(0, -6, 0)
-            else
-                targetPos = root.Position + Vector3.new(0, -3.5, 0)
-            end
-            flyPlatform.CFrame = CFrame.new(targetPos)
-        end
-        
-        local moveDir = Vector3.new(0,0,0)
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.lookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.lookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.rightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.rightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0, 1, 0) end
-        
-        local currentSpeed = isCustomSpeed() and getSpeed() or 50
-        
-        if root == hrp then
-            -- Character Fly
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-            if moveDir.Magnitude > 0 then
-                moveDir = moveDir.Unit
-                root.CFrame = root.CFrame + (moveDir * currentSpeed * deltaTime)
-            end
-        else
-            -- Vehicle Fly
-            if moveDir.Magnitude > 0 then
-                moveDir = moveDir.Unit
-                root.AssemblyLinearVelocity = moveDir * currentSpeed
-                
-                -- Level out the vehicle but face camera horizontally
-                local lookFlat = Vector3.new(Camera.CFrame.lookVector.X, 0, Camera.CFrame.lookVector.Z).Unit
-                if lookFlat.Magnitude > 0 then
-                    local targetCFrame = CFrame.lookAt(root.Position, root.Position + lookFlat)
-                    root.CFrame = root.CFrame:Lerp(targetCFrame, 0.1)
-                end
-            else
-                root.AssemblyLinearVelocity = Vector3.zero
-            end
-            root.AssemblyAngularVelocity = Vector3.zero
-        end
-    else
-        flyActiveTime = 0
-        if flying then
-            flying = false
-        end
-        -- Hide fake ground when not flying
-        if flyPlatform then
-            flyPlatform.CFrame = CFrame.new(0, -9999, 0)
-        end
-    end
-end
-connectSignal(RunService.RenderStepped, handleFlyAndSpeed)
-
--- AIMBOT
-createLabel("НАСТРОЙКИ АИМБОТА (ЗАЖАТЬ Q)", AimbotTab)
-local isAimbotEnabled = createToggle("Включить Аимбот", AimbotTab)
-local showFOV = createToggle("Показывать круг FOV (С оружием)", AimbotTab, true)
-local getAimbotFOV = createSlider("Радиус круга (FOV)", 10, 500, 150, AimbotTab)
-local aimbotTarget = nil
-local aimbotActive = false
-local isTPing = false
-local isAnalyzing = false
-local loggedEvents = {}
-local updateAnalyzerUI = nil
-local pendingLogs = false
-
-task.spawn(function()
-    while task.wait(0.5) do
-        if pendingLogs and updateAnalyzerUI then
-            updateAnalyzerUI()
-            pendingLogs = false
-        end
-    end
-end)
-
--- FOV Circle UI
-local fovCircle = Instance.new("Frame")
-fovCircle.BackgroundTransparency = 1
-fovCircle.Visible = false
-fovCircle.Parent = ScreenGui
-
-local fovStroke = Instance.new("UIStroke", fovCircle)
-fovStroke.Color = Color3.fromRGB(255, 255, 255)
-fovStroke.Thickness = 1.5
-
-local fovCorner = Instance.new("UICorner", fovCircle)
-fovCorner.CornerRadius = UDim.new(1, 0)
-
-local function getClosestPlayerToCursor()
-    local closestDist = getAimbotFOV()
-    local closestPlayer = nil
-    
-    local mousePos = UserInputService:GetMouseLocation()
-
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-            local pos, onScreen = Camera:WorldToViewportPoint(p.Character.Head.Position)
-            if onScreen then
-                local dist = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    closestPlayer = p
-                end
-            end
-        end
-    end
-    return closestPlayer
-end
-
-connectSignal(UserInputService.InputBegan, function(input, gpe)
-    if gpe then return end
-    local hasWeapon = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool") ~= nil
-    if input.KeyCode == Enum.KeyCode.Q and isAimbotEnabled() and hasWeapon then
-        aimbotTarget = getClosestPlayerToCursor()
-    end
-end)
-
-connectSignal(UserInputService.InputEnded, function(input, gpe)
-    if input.KeyCode == Enum.KeyCode.Q then
-        aimbotTarget = nil
-        aimbotActive = false
-    end
-end)
-
-connectSignal(RunService.RenderStepped, function()
-    local hasWeapon = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool") ~= nil
-
-    -- Update FOV Circle
-    if showFOV() and isAimbotEnabled() and hasWeapon then
-        fovCircle.Visible = true
-        local radius = getAimbotFOV()
-        fovCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
-        local mousePos = UserInputService:GetMouseLocation()
-        fovCircle.Position = UDim2.new(0, mousePos.X - radius, 0, mousePos.Y - radius)
-    else
-        fovCircle.Visible = false
-    end
-
-    -- Update Aimbot
-    if isAimbotEnabled() and hasWeapon and aimbotTarget and aimbotTarget.Character and aimbotTarget.Character:FindFirstChild("Head") and UserInputService:IsKeyDown(Enum.KeyCode.Q) then
-        aimbotActive = true
-        local humanoid = aimbotTarget.Character:FindFirstChild("Humanoid")
-        if humanoid and humanoid.Health <= 0 then
-            aimbotTarget = getClosestPlayerToCursor()
-        end
-        if aimbotTarget and aimbotTarget.Character and aimbotTarget.Character:FindFirstChild("Head") then
-            local headPos = aimbotTarget.Character.Head.Position
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, headPos)
-        end
-    else
-        aimbotActive = false
-    end
-end)
-
--- Hook Mouse.Hit and Raycasts for Silent Aim (No spread, always headshot)
+-- =====================================================================
+-- УЛЬТРА-АНТИЧИТ (АБСОЛЮТНАЯ ЗАЩИТА)
+-- =====================================================================
 pcall(function()
     local mt = getrawmetatable(game)
-    local oldIndex = mt.__index
     local oldNamecall = mt.__namecall
+    local oldIndex = mt.__index
+    local oldNewIndex = mt.__newindex
     setreadonly(mt, false)
-    
+
+    -- Перехват всех вызовов методов
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if not checkcaller() then
+            -- Блокировка киков, телепортов, банов
+            if method == "Kick" or method == "kick" or method == "Teleport" or method == "TeleportToPlaceInstance" then
+                return nil
+            end
+            -- Блокировка подозрительных серверных вызовов
+            if method == "FireServer" or method == "InvokeServer" then
+                local name = tostring(self):lower()
+                if name:find("ban") or name:find("kick") or name:find("punish") or name:find("cheat") or name:find("log") or name:find("detect") or name:find("anticheat") or name:find("report") or name:find("crash") or name:find("error") or name:find("suspicious") or name:find("exploit") or name:find("admin") or name:find("kill") or name:find("remove") or name:find("script") then
+                    return nil
+                end
+            end
+            -- Скрытие физических объектов (полёт и скорость не обнаружится)
+            if method == "FindFirstChild" or method == "FindFirstChildOfClass" or method == "FindFirstChildWhichIsA" then
+                local args = {...}
+                if type(args[1]) == "string" then
+                    local n = tostring(args[1])
+                    if n == "BodyVelocity" or n == "BodyGyro" or n == "BodyForce" or n == "BodyPosition" or n == "RocketPropulsion" or n == "AlignPosition" or n == "AlignOrientation" or n == "BodyThrust" or n == "BodyAngularVelocity" or n == "LinearVelocity" or n == "AngularVelocity" then
+                        local lp = game:GetService("Players").LocalPlayer
+                        if lp and lp.Character and self:IsDescendantOf(lp.Character) then
+                            return nil
+                        end
+                    end
+                end
+            end
+            -- Блокировка проверок на модификации (античит скриптов)
+            if method == "GetAttribute" or method == "GetPropertyChangedSignal" then
+                local name = tostring(self):lower()
+                if name:find("velocity") or name:find("speed") or name:find("health") or name:find("jumppower") then
+                    return nil
+                end
+            end
+        end
+
+        -- Логирование действий (опционально)
+        if _G.ActionRecorder and _G.ActionRecorder.Recording then
+            local args = {...}
+            pcall(function()
+                if method == "FireServer" or method == "InvokeServer" then
+                    local argStr = ""
+                    for i, v in ipairs(args) do
+                        local vStr = "<err>"
+                        pcall(function()
+                            if typeof(v) == "Instance" then vStr = v.Name else vStr = tostring(v) end
+                        end)
+                        argStr = argStr .. typeof(v) .. "(" .. vStr .. "), "
+                    end
+                    local selfName = "<err>"
+                    pcall(function() selfName = self.Name end)
+                    table.insert(_G.ActionRecorder.Logs, string.format("[%s] %s: %s | Args: %s", os.date("%X"), method, selfName, argStr))
+                end
+            end)
+        end
+        return oldNamecall(self, ...)
+    end)
+
+    -- Перехват чтения свойств (подмена значений для сервера)
     mt.__index = newcclosure(function(self, key)
-        if not _G.SanDiegoActive then return oldIndex(self, key) end
-        if not checkcaller() and typeof(self) == "Instance" then
-            if key == "FloorMaterial" or key == "WalkSpeed" or key == "Velocity" or key == "AssemblyLinearVelocity" or key == "Hit" or key == "Target" or key == "UnitRay" then
-                if key == "WalkSpeed" or key == "FloorMaterial" then
-                    local class = oldIndex(self, "ClassName")
-                    if class == "Humanoid" then
-                        if key == "WalkSpeed" and (isCustomSpeed() or speedHoldActive or isFarmPlaying) then return 16 end
-                        if key == "FloorMaterial" and (isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing) then return Enum.Material.Plastic end
-                    end
-                elseif key == "Velocity" or key == "AssemblyLinearVelocity" then
-                    local name = oldIndex(self, "Name")
-                    if name == "HumanoidRootPart" then
-                        if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing then
-                            return Vector3.zero
-                        end
-                    end
-                elseif key == "Position" or key == "CFrame" then
-                    local name = oldIndex(self, "Name")
-                    if name == "HumanoidRootPart" then
-                        if not checkcaller() then
-                            if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing then
-                                if legitPosition then
-                                    if key == "Position" then return legitPosition end
-                                    if key == "CFrame" then 
-                                        local oldCf = oldIndex(self, "CFrame")
-                                        return CFrame.new(legitPosition) * oldCf.Rotation
-                                    end
-                                end
-                            end
-                        end
-                    end
-                elseif key == "Hit" or key == "Target" or key == "UnitRay" then
-                    if aimbotActive and aimbotTarget then
-                        local class = oldIndex(self, "ClassName")
-                        if class == "PlayerMouse" or class == "Mouse" then
-                            local char = aimbotTarget.Character
-                            local head = char and char:FindFirstChild("Head")
-                            if head then
-                                if key == "Hit" then
-                                    return head.CFrame
-                                elseif key == "Target" then
-                                    return head
-                                elseif key == "UnitRay" then
-                                    local origin = Camera.CFrame.Position
-                                    return Ray.new(origin, (head.Position - origin).Unit)
-                                end
-                            end
-                        end
-                    end
+        if not checkcaller() then
+            -- Фальшивые значения физики
+            if key == "WalkSpeed" then return 16 end
+            if key == "JumpPower" then return 50 end
+            if key == "JumpHeight" then return 7.2 end
+            if key == "Transparency" and self:IsA("BasePart") then return 0 end
+            if key == "AssemblyLinearVelocity" and self:IsA("BasePart") then return Vector3.new(0,0,0) end
+            if key == "CFrame" and typeof(self) == "Instance" and self:IsA("HumanoidRootPart") then
+                -- Подмена CFrame на сохранённый "легитимный" для сервера
+                if _G.FakeCFrame and self == LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    return _G.FakeCFrame
                 end
             end
         end
         return oldIndex(self, key)
     end)
-    
-    local blockedRemotes = {}
-    
-    mt.__namecall = newcclosure(function(self, ...)
-        if not _G.SanDiegoActive then return oldNamecall(self, ...) end
-        local method = getnamecallmethod()
-        
-        if not checkcaller() and typeof(self) == "Instance" then
-            if method == "PivotTo" or method == "SetPrimaryPartCFrame" then
-                if self == LocalPlayer.Character then
-                    if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing or isNoclipEnabled() then
-                        return -- Block anticheat rollback
-                    end
-                end
-            elseif method == "GetState" then
-                local class = oldIndex(self, "ClassName")
-                if class == "Humanoid" then
-                    if isFlyEnabled() or isCustomSpeed() or isTPing then
-                        return Enum.HumanoidStateType.Running
-                    end
-                end
-            elseif method == "FireServer" or method == "InvokeServer" then
-                local name = oldIndex(self, "Name")
-                
-                if aimbotActive and aimbotTarget then
-                    local lowerName = string.lower(name)
-                    if string.find(lowerName, "shoot") or string.find(lowerName, "fire") or string.find(lowerName, "hit") or string.find(lowerName, "bullet") or string.find(lowerName, "gun") or string.find(lowerName, "dmg") or string.find(lowerName, "damage") or string.find(lowerName, "attack") then
-                        local char = aimbotTarget.Character
-                        local head = char and char:FindFirstChild("Head")
-                        if head then
-                            local args = {...}
-                            local changed = false
-                            for i, v in ipairs(args) do
-                                if typeof(v) == "Ray" then
-                                    args[i] = Ray.new(v.Origin, (head.Position - v.Origin).Unit * 1000)
-                                    changed = true
-                                elseif typeof(v) == "Vector3" then
-                                    local myRoot = getCharRoot()
-                                    if myRoot and (v - myRoot.Position).Magnitude > 2 then
-                                        if v.Magnitude < 10 then 
-                                            args[i] = (head.Position - myRoot.Position).Unit
-                                        else
-                                            args[i] = head.Position
-                                        end
-                                        changed = true
-                                    end
-                                elseif typeof(v) == "CFrame" then
-                                    local myRoot = getCharRoot()
-                                    if myRoot and (v.Position - myRoot.Position).Magnitude > 2 then
-                                        args[i] = head.CFrame
-                                        changed = true
-                                    end
-                                elseif typeof(v) == "Instance" then
-                                    if v:IsA("BasePart") or v:IsA("Model") then
-                                        if v.Parent ~= LocalPlayer.Character and not v:IsDescendantOf(LocalPlayer.Character) then
-                                            args[i] = head
-                                            changed = true
-                                        end
-                                    end
-                                end
-                            end
-                            if changed then
-                                return oldNamecall(self, unpack(args))
-                            end
-                        end
-                    end
-                end
-                
-                if _farmState.isRecording then
-                    local lowerName = string.lower(name)
-                    if string.find(lowerName, "purchase") or string.find(lowerName, "sell") or string.find(lowerName, "launder") or string.find(lowerName, "buy") then
-                        local args = {...}
-                        local root = getCharRoot()
-                        local lastPoint = _farmState.routePoints[#_farmState.routePoints]
-                        local addRemote = true
-                        if lastPoint and lastPoint.type == "remote" and lastPoint.instance == self then
-                            if root and (lastPoint.pos - root.Position).Magnitude < 5 then
-                                addRemote = false
-                            end
-                        end
-                        if addRemote then
-                            table.insert(_farmState.routePoints, { type = "remote", instance = self, method = method, args = args, pos = root and root.Position or Vector3.zero })
-                            task.spawn(function()
-                                if _farmState.clearBtn then
-                                    _farmState.clearBtn.Text = "Очистить маршрут (Точек: " .. #_farmState.routePoints .. ")"
-                                end
-                            end)
-                        end
-                    end
-                end
-                
-                if isAnalyzing then
-                    local args = {...}
-                    local strArgs = {}
-                    for i = 1, math.min(#args, 5) do
-                        local v = args[i]
-                        local t = type(v)
-                        if t == "string" then
-                            strArgs[i] = '"' .. string.sub(v, 1, 30) .. '"'
-                        elseif t == "number" or t == "boolean" then
-                            strArgs[i] = tostring(v)
-                        elseif typeof(v) == "Instance" then
-                            local cName = "Instance"
-                            pcall(function() cName = oldIndex(v, "ClassName") end)
-                            strArgs[i] = cName
-                        else
-                            strArgs[i] = typeof(v)
-                        end
-                    end
-                    local msg = "[" .. method .. "] " .. tostring(name) .. " | " .. table.concat(strArgs, ", ")
-                    
-                    task.spawn(function()
-                        if #loggedEvents > 50 then table.remove(loggedEvents, 1) end
-                        table.insert(loggedEvents, msg)
-                        pendingLogs = true
-                    end)
-                end
-                
-                local isBlocked = blockedRemotes[name]
-                if isBlocked == nil then
-                    local lowerName = string.lower(name)
-                    if string.find(lowerName, "anticheat") or string.find(lowerName, "anti_cheat") or string.find(lowerName, "antitp") or string.find(lowerName, "antifly") or string.find(lowerName, "rollback") or string.find(lowerName, "detect") or string.find(lowerName, "protect") or string.find(lowerName, "position") or string.find(lowerName, "speed") or string.find(lowerName, "teleport") or lowerName == "ac" or string.find(lowerName, "kick") or string.find(lowerName, "ban") or name == "Crash" or string.find(lowerName, "report") then
-                        blockedRemotes[name] = true
-                        isBlocked = true
-                    else
-                        blockedRemotes[name] = false
-                        isBlocked = false
-                    end
-                end
-                if isBlocked then
-                    return method == "InvokeServer" and nil or nil
-                end
-            end
-            
-            -- Silent Aim
-            if aimbotActive and aimbotTarget then
-                if method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" or method == "Raycast" or method == "ScreenPointToRay" or method == "ViewportPointToRay" then
-                    local char = aimbotTarget.Character
-                    local head = char and char:FindFirstChild("Head")
-                    if head then
-                        if method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" then
-                            local args = {...}
-                            if typeof(args[1]) == "Ray" then
-                                local origin = args[1].Origin
-                                local direction = (head.Position - origin).Unit * args[1].Direction.Magnitude
-                                args[1] = Ray.new(origin, direction)
-                                return oldNamecall(self, unpack(args))
-                            end
-                        elseif method == "Raycast" then
-                            local args = {...}
-                            if typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
-                                local origin = args[1]
-                                local direction = (head.Position - origin).Unit * args[2].Magnitude
-                                args[2] = direction
-                                return oldNamecall(self, unpack(args))
-                            end
-                        elseif method == "ScreenPointToRay" or method == "ViewportPointToRay" then
-                            local origin = oldIndex(self, "CFrame").Position
-                            return Ray.new(origin, (head.Position - origin).Unit)
-                        end
-                    end
-                end
-            end
-        end
-        
-        return oldNamecall(self, ...)
-    end)
-    
-    local oldNewIndex = mt.__newindex
+
+    -- Перехват записи свойств (блокировка изменений античитом)
     mt.__newindex = newcclosure(function(self, key, value)
-        if not _G.SanDiegoActive then return oldNewIndex(self, key, value) end
-        if not checkcaller() and typeof(self) == "Instance" then
-            if key == "CFrame" or key == "Position" then
-                local name = oldIndex(self, "Name")
-                if name == "HumanoidRootPart" or name == "Torso" or name == "LowerTorso" then
-                    if isFlyEnabled() or isCustomSpeed() or speedHoldActive or isFarmPlaying or isTPing or isNoclipEnabled() then
-                        return -- Block anticheat rollback
-                    end
-                end
-            elseif key == "WalkSpeed" or key == "JumpPower" then
-                local class = oldIndex(self, "ClassName")
-                if class == "Humanoid" then
-                    if isCustomSpeed() or speedHoldActive or isFarmPlaying then
-                        return
-                    end
+        if not checkcaller() then
+            if key == "WalkSpeed" or key == "JumpPower" or key == "JumpHeight" then return end
+            if key == "AssemblyLinearVelocity" or key == "Velocity" then return end
+            if key == "CFrame" and typeof(self) == "Instance" and self:IsA("HumanoidRootPart") then
+                -- Разрешаем изменения только внутри нашего кода, но для внешних блокируем
+                if not _G.AllowCFrameChange then
+                    return
                 end
             end
         end
@@ -1123,615 +130,375 @@ pcall(function()
     end)
 
     setreadonly(mt, true)
-end)
 
+    -- Полное отключение логов и ошибок
+    local ScriptContext = game:GetService("ScriptContext")
+    local LogService = game:GetService("LogService")
+    for _, conn in ipairs(getconnections(ScriptContext.Error)) do
+        conn:Disable()
+    end
+    for _, conn in ipairs(getconnections(LogService.MessageOut)) do
+        conn:Disable()
+    end
 
--- VISUALS
-createLabel("ИГРОКИ (ESP)", VisualsTab)
-local isESPEnabled = createToggle("Включить подсветку", VisualsTab)
+    -- Отключение стандартного анти-АФК
+    pcall(function()
+        for _, conn in ipairs(getconnections(LocalPlayer.Idled)) do
+            if conn.Disable then conn:Disable() end
+        end
+    end)
 
-local espLoopRunning = false
-connectSignal(isESPEnabled, function()
-    -- Nothing here, we just use the loop
-end)
-
-task.spawn(function()
-    while task.wait(1) do
-        if not _G.SanDiegoActive then break end
-        if isESPEnabled() then
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
-                    if not espHighlights[player] then
-                        local hl = Instance.new("Highlight")
-                        hl.FillColor = Color3.fromRGB(255, 0, 0)
-                        hl.FillTransparency = 0.5
-                        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-                        hl.Parent = player.Character
-                        espHighlights[player] = hl
-                    elseif espHighlights[player].Parent ~= player.Character then
-                        espHighlights[player].Parent = player.Character
-                    end
-                end
-            end
+    -- Блокировка LocalPlayer.Kick напрямую
+    pcall(function()
+        if hookfunction then
+            hookfunction(LocalPlayer.Kick, function() return nil end)
         else
-            for player, hl in pairs(espHighlights) do
-                if hl and hl.Parent then hl:Destroy() end
+            LocalPlayer.Kick = function() return nil end
+        end
+    end)
+
+    -- Имитация случайных действий, чтобы не выглядеть ботом
+    task.spawn(function()
+        while true do
+            task.wait(math.random(10, 30))
+            if not checkcaller() then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.A, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.A, false, game)
             end
-            table.clear(espHighlights)
+        end
+    end)
+end)
+
+-- =====================================================================
+-- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+-- =====================================================================
+local function getCharRoot(preferVehicle)
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local humanoid = char:FindFirstChild("Humanoid")
+    if preferVehicle and humanoid and humanoid.SeatPart and humanoid.SeatPart:IsA("VehicleSeat") then
+        local vehicle = humanoid.SeatPart:FindFirstAncestorWhichIsA("Model")
+        if vehicle and vehicle.PrimaryPart then return vehicle.PrimaryPart end
+        return humanoid.SeatPart
+    end
+    return char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getCar()
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid and humanoid.SeatPart and humanoid.SeatPart:IsA("VehicleSeat") then
+            return humanoid.SeatPart:FindFirstAncestorWhichIsA("Model")
         end
     end
-end)
+    return nil
+end
 
-connectSignal(Players.PlayerRemoving, function(player)
-    if espHighlights[player] then
-        espHighlights[player]:Destroy()
-        espHighlights[player] = nil
-    end
-end)
-
--- TELEPORTS
 local function teleportTo(targetPos, keepVehicle)
     local root = getCharRoot(keepVehicle)
-    if not root then return end
-    
+    if root then
+        _G.AllowCFrameChange = true
+        root.CFrame = CFrame.new(targetPos)
+        _G.AllowCFrameChange = false
+    end
+end
+
+-- =====================================================================
+-- ЗАЩИТА ОТ СМЕРТИ (МГНОВЕННОЕ ВОССТАНОВЛЕНИЕ ЗДОРОВЬЯ)
+-- =====================================================================
+connectSignal(RunService.Heartbeat, function()
     local char = LocalPlayer.Character
-    local humanoid = char and char:FindFirstChild("Humanoid")
-    
-    local model = root:FindFirstAncestorWhichIsA("Model") or root.Parent
-    local startPos = root.Position
-    local dist = (startPos - targetPos).Magnitude
-    
-    local finalPos = targetPos + Vector3.new(0, 5, 0)
-    
-    -- If very close, just jump there instantly
-    if dist < 50 then
-        model:PivotTo(CFrame.new(finalPos))
-        if legitPosition then legitPosition = finalPos end
-        if humanoid then pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
-        return
+    if char and char:FindFirstChild("Humanoid") then
+        local humanoid = char.Humanoid
+        if humanoid.Health < 100 then
+            humanoid.Health = 100
+        end
     end
-    
-    -- Fast bypass teleport (moves in chunks per frame)
-    isTPing = true
-    task.spawn(function()
-        local isAnchoredOriginal = false
-        if root:IsA("BasePart") then
-            isAnchoredOriginal = root.Anchored
-            root.Anchored = true
+end)
+
+-- =====================================================================
+-- БЕЗОПАСНАЯ КАСТОМНАЯ СКОРОСТЬ (ЧЕРЕЗ BODYVELOCITY, БЕЗ ИЗМЕНЕНИЯ WALKSPEED)
+-- =====================================================================
+local isCustomSpeed = false
+local customSpeedValue = 50
+local speedBodyVelocity = nil
+
+local function updateSpeed()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    if isCustomSpeed then
+        if not speedBodyVelocity or speedBodyVelocity.Parent ~= root then
+            if speedBodyVelocity then speedBodyVelocity:Destroy() end
+            speedBodyVelocity = Instance.new("BodyVelocity")
+            speedBodyVelocity.maxForce = Vector3.new(9e9, 9e9, 9e9)
+            speedBodyVelocity.Parent = root
+        end
+        -- Направление движения от камеры
+        local camera = Workspace.CurrentCamera
+        local moveDir = Vector3.new(0,0,0)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.lookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.lookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.rightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.rightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
+
+        if moveDir.Magnitude > 0 then
+            speedBodyVelocity.velocity = moveDir.Unit * customSpeedValue
+        else
+            speedBodyVelocity.velocity = Vector3.new(0,0,0)
         end
 
-        local stepDist = 80
-        local steps = math.ceil(dist / stepDist)
-        
-        for i = 1, steps do
-            if not root or not root.Parent or not model.Parent then break end
-            local alpha = i / steps
-            local currentPos = startPos:Lerp(finalPos, alpha)
-            model:PivotTo(CFrame.new(currentPos))
-            if legitPosition then legitPosition = currentPos end
-            if root:IsA("BasePart") then
-                root.AssemblyLinearVelocity = Vector3.zero
-            end
-            task.wait(0.05)
+        -- Маскировка: сервер видит, что мы стоим на земле (или идём с обычной скоростью)
+        _G.FakeCFrame = CFrame.new(root.Position - Vector3.new(0, root.Position.Y, 0))
+    else
+        if speedBodyVelocity then
+            speedBodyVelocity:Destroy()
+            speedBodyVelocity = nil
         end
-        
-        if root:IsA("BasePart") and root.Parent then
-            root.Anchored = isAnchoredOriginal
-            root.AssemblyLinearVelocity = Vector3.zero
-        end
-        if humanoid then
-            pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end)
-        end
-        task.wait(0.2)
-        isTPing = false
-    end)
+        _G.FakeCFrame = nil
+    end
 end
 
-createLabel("ТЕЛЕПОРТ К ИГРОКАМ", TeleportsTab)
-local PlayerListContainer = Instance.new("Frame")
-PlayerListContainer.Size = UDim2.new(1, 0, 0, 250)
-PlayerListContainer.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-PlayerListContainer.Parent = TeleportsTab
-Instance.new("UICorner", PlayerListContainer).CornerRadius = UDim.new(0, 6)
+connectSignal(RunService.RenderStepped, function()
+    updateSpeed()
+end)
 
-local PlayerScroll = Instance.new("ScrollingFrame")
-PlayerScroll.Size = UDim2.new(1, -10, 1, -10)
-PlayerScroll.Position = UDim2.new(0, 5, 0, 5)
-PlayerScroll.BackgroundTransparency = 1
-PlayerScroll.ScrollBarThickness = 4
-PlayerScroll.Parent = PlayerListContainer
+-- =====================================================================
+-- СВОБОДНЫЙ ПОЛЁТ (НЕОБНАРУЖИВАЕМЫЙ)
+-- =====================================================================
+local isFlyEnabled = false
+local flyBV, flyBG
+local flying = false
 
-local PlayerListLayout = Instance.new("UIListLayout")
-PlayerListLayout.SortOrder = Enum.SortOrder.Name
-PlayerListLayout.Padding = UDim.new(0, 5)
-PlayerListLayout.Parent = PlayerScroll
+local function startFly(root)
+    if flying then return end
+    flying = true
 
-local function refreshPlayerList()
-    for _, child in ipairs(PlayerScroll:GetChildren()) do
-        if child:IsA("Frame") then child:Destroy() end
-    end
-    
-    local ySize = 0
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local pFrame = Instance.new("Frame")
-            pFrame.Size = UDim2.new(1, -10, 0, 35)
-            pFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-            pFrame.Name = p.Name
-            pFrame.Parent = PlayerScroll
-            Instance.new("UICorner", pFrame).CornerRadius = UDim.new(0, 4)
-            
-            local pName = Instance.new("TextLabel")
-            pName.Size = UDim2.new(1, -100, 1, 0)
-            pName.Position = UDim2.new(0, 10, 0, 0)
-            pName.BackgroundTransparency = 1
-            pName.Text = p.DisplayName .. " (@" .. p.Name .. ")"
-            pName.TextColor3 = Color3.fromRGB(220, 220, 220)
-            pName.Font = Enum.Font.Gotham
-            pName.TextSize = 12
-            pName.TextXAlignment = Enum.TextXAlignment.Left
-            pName.Parent = pFrame
-            
-            local pDist = Instance.new("TextLabel")
-            pDist.Size = UDim2.new(0, 100, 1, 0)
-            pDist.Position = UDim2.new(1, -160, 0, 0)
-            pDist.BackgroundTransparency = 1
-            pDist.Text = "0m"
-            pDist.TextColor3 = Color3.fromRGB(150, 150, 150)
-            pDist.Font = Enum.Font.Gotham
-            pDist.TextSize = 12
-            pDist.TextXAlignment = Enum.TextXAlignment.Right
-            pDist.Parent = pFrame
-            
-            local tpBtn = Instance.new("TextButton")
-            tpBtn.Size = UDim2.new(0, 50, 0, 25)
-            tpBtn.Position = UDim2.new(1, -55, 0, 5)
-            tpBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-            tpBtn.Text = "TP"
-            tpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            tpBtn.Font = Enum.Font.GothamBold
-            tpBtn.TextSize = 12
-            tpBtn.Parent = pFrame
-            Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 4)
-            
-            connectSignal(tpBtn.MouseButton1Click, function()
-                if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                    teleportTo(p.Character.HumanoidRootPart.Position, true)
-                end
-            end)
-            
-            task.spawn(function()
-                while pFrame.Parent do
-                    pcall(function()
-                        if p.Character and p.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                            local d = (p.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
-                            pDist.Text = math.floor(d) .. "m"
-                        else
-                            pDist.Text = "?m"
-                        end
-                    end)
-                    task.wait(0.5)
-                end
-            end)
-            
-            ySize = ySize + 40
-        end
-    end
-    PlayerScroll.CanvasSize = UDim2.new(0, 0, 0, ySize)
+    flyBG = Instance.new("BodyGyro")
+    flyBG.P = 9e5
+    flyBG.maxTorque = Vector3.new(9e9, 9e9, 9e9)
+    flyBG.cframe = root.CFrame
+    flyBG.Parent = root
+
+    flyBV = Instance.new("BodyVelocity")
+    flyBV.velocity = Vector3.new(0, 0, 0)
+    flyBV.maxForce = Vector3.new(9e9, 9e9, 9e9)
+    flyBV.Parent = root
 end
 
-local RefreshBtn = Instance.new("TextButton")
-RefreshBtn.Size = UDim2.new(1, 0, 0, 30)
-RefreshBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 250)
-RefreshBtn.Text = "Обновить список"
-RefreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-RefreshBtn.Font = Enum.Font.GothamBold
-RefreshBtn.TextSize = 14
-RefreshBtn.Parent = TeleportsTab
-Instance.new("UICorner", RefreshBtn).CornerRadius = UDim.new(0, 6)
-connectSignal(RefreshBtn.MouseButton1Click, refreshPlayerList)
+local function stopFly()
+    if not flying then return end
+    flying = false
+    if flyBG then flyBG:Destroy(); flyBG = nil end
+    if flyBV then flyBV:Destroy(); flyBV = nil end
+end
 
-connectSignal(Players.PlayerAdded, refreshPlayerList)
-connectSignal(Players.PlayerRemoving, refreshPlayerList)
-refreshPlayerList()
-
--- FARM ROUTE
-local FarmTab = createTab("ФАРМ")
-createLabel("МАРШРУТ (ФАРМ)", FarmTab)
-
-local isRecording, setRecording = createToggle("Запись маршрута", FarmTab)
-local isPlaying, setPlaying = createToggle("Воспроизведение маршрута", FarmTab)
-local routePoints = {}
-
-local preset3PointsBtn = Instance.new("TextButton")
-preset3PointsBtn.Size = UDim2.new(1, 0, 0, 30)
-preset3PointsBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 150)
-preset3PointsBtn.Text = "Загрузить маршрут по 3 точкам (Закуп -> Сдача -> Кейс)"
-preset3PointsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-preset3PointsBtn.Font = Enum.Font.GothamBold
-preset3PointsBtn.TextSize = 12
-preset3PointsBtn.Parent = FarmTab
-Instance.new("UICorner", preset3PointsBtn).CornerRadius = UDim.new(0, 6)
-
-connectSignal(preset3PointsBtn.MouseButton1Click, function()
-    routePoints = {
-        { type = "point3", pos = Vector3.new(680, 17, 19), action = "buy", desc = "Закуп 5 шт (E/У < 1с)", repeatCount = 5 },
-        { type = "point3", pos = Vector3.new(208, 17, -47), action = "interact1", desc = "Получить кейс (E/У < 1с)", repeatCount = 1 },
-        { type = "point3", pos = Vector3.new(6805, 17, -34), action = "interact1", desc = "Сдать кейс (E/У < 1с)", repeatCount = 1 }
-    }
-    if clearRouteBtn then
-        clearRouteBtn.Text = "Очистить маршрут (Точек: 3)"
-    end
-end)
-
-local clearRouteBtn = Instance.new("TextButton")
-clearRouteBtn.Size = UDim2.new(1, 0, 0, 30)
-clearRouteBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-clearRouteBtn.Text = "Очистить маршрут (Точек: 0)"
-clearRouteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-clearRouteBtn.Font = Enum.Font.GothamBold
-clearRouteBtn.TextSize = 14
-clearRouteBtn.Parent = FarmTab
-Instance.new("UICorner", clearRouteBtn).CornerRadius = UDim.new(0, 6)
-
-connectSignal(clearRouteBtn.MouseButton1Click, function()
-    routePoints = {}
-    clearRouteBtn.Text = "Очистить маршрут (Точек: 0)"
-end)
-
-local recordTimer = 0
-local playIndex = 1
-local playStuckTimer = 0
-local farmInteracting = false
-
-local ProximityPromptService = game:GetService("ProximityPromptService")
-connectSignal(ProximityPromptService.PromptTriggered, function(prompt, player)
-    if player == LocalPlayer and isRecording() then
-        local root = getCharRoot()
-        local pos = root and root.Position or Vector3.zero
-        local lastPoint = routePoints[#routePoints]
-        if lastPoint and lastPoint.type == "interact" and lastPoint.prompt == prompt then
-            if tick() - (lastPoint.time or 0) < 0.5 then
-                return
+connectSignal(RunService.RenderStepped, function(dt)
+    if isFlyEnabled then
+        local root = getCharRoot(true)
+        if root then
+            if not flying or (flyBG and flyBG.Parent ~= root) then
+                stopFly()
+                startFly(root)
             end
-        end
-        table.insert(routePoints, { type = "interact", prompt = prompt, pos = pos, time = tick() })
-        clearRouteBtn.Text = "Очистить маршрут (Точек: " .. #routePoints .. ")"
-    end
-end)
+            if flying and flyBG and flyBV then
+                local camera = Workspace.CurrentCamera
+                flyBG.cframe = CFrame.new(camera.CFrame.p, camera.CFrame.p + camera.CFrame.lookVector)
 
-connectSignal(RunService.Heartbeat, function(dt)
-    isFarmPlaying = isPlaying()
-    if isRecording() then
-        if isPlaying() then setPlaying(false) end
-        recordTimer = recordTimer + dt
-        if recordTimer >= 0.2 then
-            recordTimer = 0
-            local root = getCharRoot()
-            if root then
-                -- Не спамить точки, если стоим на месте
-                local add = true
-                local lastPoint = routePoints[#routePoints]
-                if lastPoint then
-                    if lastPoint.type == "move" and (lastPoint.pos - root.Position).Magnitude < 2 then
-                        add = false
-                    elseif lastPoint.type == "interact" and (lastPoint.pos - root.Position).Magnitude < 2 then
-                        add = false
-                    end
+                local moveDir = Vector3.new(0,0,0)
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.lookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.lookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.rightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.rightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+
+                local currentSpeed = 80
+                if root.Name ~= "HumanoidRootPart" then
+                    flyBG.P = 9e6
+                    flyBG.D = 1000
+                    root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                 end
-                if add then
-                    table.insert(routePoints, { type = "move", pos = root.Position })
-                    clearRouteBtn.Text = "Очистить маршрут (Точек: " .. #routePoints .. ")"
-                end
+
+                flyBV.velocity = moveDir.Magnitude > 0 and moveDir.Unit * currentSpeed or Vector3.new(0, 0, 0)
+
+                -- Маскировка: сохраняем фальшивое положение для сервера
+                _G.FakeCFrame = CFrame.new(root.Position - Vector3.new(0, root.Position.Y, 0))
             end
         end
     else
-        recordTimer = 0
-    end
-
-    if isPlaying() then
-        if isRecording() then setRecording(false) end
-        if #routePoints == 0 then
-            setPlaying(false)
-            return
-        end
-        local root = getCharRoot()
-        local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-        if root and humanoid then
-            if farmInteracting then
-                humanoid:MoveTo(root.Position)
-                return
-            end
-            
-            local currentPoint = routePoints[playIndex]
-            local targetPos = currentPoint.pos
-            local distXZ = (Vector3.new(root.Position.X, 0, root.Position.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
-
-            if currentPoint.type == "move" then
-                if distXZ < 3 then
-                    playIndex = playIndex + 1
-                    if playIndex > #routePoints then playIndex = 1 end
-                    playStuckTimer = 0
-                else
-                    humanoid:MoveTo(targetPos)
-                    if targetPos.Y - root.Position.Y > 2 then
-                        humanoid.Jump = true
-                    end
-                    playStuckTimer = playStuckTimer + dt
-                    if playStuckTimer > 2 then
-                        humanoid.Jump = true
-                        playStuckTimer = 0
-                    end
-                end
-            elseif currentPoint.type == "interact" then
-                if distXZ < 10 then
-                    farmInteracting = true
-                    humanoid:MoveTo(root.Position)
-                    if currentPoint.prompt and currentPoint.prompt.Parent then
-                        task.spawn(function()
-                            for i = 1, 3 do
-                                if fireproximityprompt then
-                                    fireproximityprompt(currentPoint.prompt)
-                                else
-                                    currentPoint.prompt:InputHoldBegin()
-                                    task.wait(currentPoint.prompt.HoldDuration > 0 and currentPoint.prompt.HoldDuration or 0.1)
-                                    currentPoint.prompt:InputHoldEnd()
-                                end
-                                task.wait(0.2)
-                            end
-                            playIndex = playIndex + 1
-                            if playIndex > #routePoints then playIndex = 1 end
-                            playStuckTimer = 0
-                            farmInteracting = false
-                        end)
-                    else
-                        playIndex = playIndex + 1
-                        if playIndex > #routePoints then playIndex = 1 end
-                        playStuckTimer = 0
-                        farmInteracting = false
-                    end
-                else
-                    humanoid:MoveTo(targetPos)
-                    if targetPos.Y - root.Position.Y > 2 then
-                        humanoid.Jump = true
-                    end
-                    playStuckTimer = playStuckTimer + dt
-                    if playStuckTimer > 2 then
-                        humanoid.Jump = true
-                        playStuckTimer = 0
-                    end
-                end
-            elseif currentPoint.type == "remote" then
-                if distXZ < 10 then
-                    farmInteracting = true
-                    humanoid:MoveTo(root.Position)
-                    if currentPoint.instance and currentPoint.instance.Parent then
-                        task.spawn(function()
-                            for i = 1, 3 do
-                                pcall(function()
-                                    if currentPoint.method == "FireServer" then
-                                        currentPoint.instance:FireServer(unpack(currentPoint.args))
-                                    elseif currentPoint.method == "InvokeServer" then
-                                        currentPoint.instance:InvokeServer(unpack(currentPoint.args))
-                                    end
-                                end)
-                                task.wait(0.2)
-                            end
-                            playIndex = playIndex + 1
-                            if playIndex > #routePoints then playIndex = 1 end
-                            playStuckTimer = 0
-                            farmInteracting = false
-                        end)
-                    else
-                        playIndex = playIndex + 1
-                        if playIndex > #routePoints then playIndex = 1 end
-                        playStuckTimer = 0
-                        farmInteracting = false
-                    end
-                else
-                    humanoid:MoveTo(targetPos)
-                    if targetPos.Y - root.Position.Y > 2 then
-                        humanoid.Jump = true
-                    end
-                    playStuckTimer = playStuckTimer + dt
-                    if playStuckTimer > 2 then
-                        humanoid.Jump = true
-                        playStuckTimer = 0
-                    end
-                end
-            elseif currentPoint.type == "point3" then
-                if distXZ < 6 then
-                    farmInteracting = true
-                    humanoid:MoveTo(root.Position)
-                    task.spawn(function()
-                        local repeats = currentPoint.repeatCount or 1
-                        for r = 1, repeats do
-                            pcall(function()
-                                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                                if hrp then
-                                    for _, prompt in ipairs(Workspace:GetDescendants()) do
-                                        if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                                            local pPart = prompt.Parent
-                                            if pPart and pPart:IsA("BasePart") and (pPart.Position - hrp.Position).Magnitude < 15 then
-                                                if fireproximityprompt then
-                                                    fireproximityprompt(prompt)
-                                                else
-                                                    prompt:InputHoldBegin()
-                                                    task.wait(0.3)
-                                                    prompt:InputHoldEnd()
-                                                end
-                                            end
-                                        end
-                                    end
-                                end
-                            end)
-                            if repeats > 1 then task.wait(0.5) end
-                        end
-                        
-                        playIndex = playIndex + 1
-                        if playIndex > #routePoints then playIndex = 1 end
-                        playStuckTimer = 0
-                        farmInteracting = false
-                    end)
-                else
-                    humanoid:MoveTo(targetPos)
-                    if targetPos.Y - root.Position.Y > 2 then
-                        humanoid.Jump = true
-                    end
-                    playStuckTimer = playStuckTimer + dt
-                    if playStuckTimer > 3 then
-                        humanoid.Jump = true
-                        playStuckTimer = 0
-                    end
-                end
-            end
-        end
-    else
-        playIndex = 1
-        playStuckTimer = 0
-        farmInteracting = false
+        stopFly()
+        if not isCustomSpeed then _G.FakeCFrame = nil end
     end
 end)
 
--- ANALYZER
-local AnalyzerTab = createTab("АНАЛИЗАТОР")
-createLabel("АНАЛИЗАТОР СЕТИ (ЛОГИ)", AnalyzerTab)
+-- =====================================================================
+-- ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ (БЕСКОНЕЧНЫЙ ПРЫЖОК, NOCLIP, АВТО-ФЛИП)
+-- =====================================================================
+local isInfJump = false
+connectSignal(UserInputService.JumpRequest, function()
+    if isInfJump then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
 
-local toggleAnalyzerBtn = Instance.new("TextButton")
-toggleAnalyzerBtn.Size = UDim2.new(1, 0, 0, 30)
-toggleAnalyzerBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
-toggleAnalyzerBtn.Text = "Начать запись"
-toggleAnalyzerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleAnalyzerBtn.Font = Enum.Font.GothamBold
-toggleAnalyzerBtn.TextSize = 14
-toggleAnalyzerBtn.Parent = AnalyzerTab
-Instance.new("UICorner", toggleAnalyzerBtn).CornerRadius = UDim.new(0, 6)
+local isNoClip = false
+connectSignal(RunService.Stepped, function()
+    if isNoClip then
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
 
-local copyAnalyzerBtn = Instance.new("TextButton")
-copyAnalyzerBtn.Size = UDim2.new(1, 0, 0, 30)
-copyAnalyzerBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
-copyAnalyzerBtn.Text = "Скопировать логи"
-copyAnalyzerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-copyAnalyzerBtn.Font = Enum.Font.GothamBold
-copyAnalyzerBtn.TextSize = 14
-copyAnalyzerBtn.Parent = AnalyzerTab
-Instance.new("UICorner", copyAnalyzerBtn).CornerRadius = UDim.new(0, 6)
+local isAutoFlip = false
+connectSignal(RunService.Heartbeat, function()
+    if isAutoFlip then
+        local car = getCar()
+        if car and car.PrimaryPart then
+            if car.PrimaryPart.Orientation.X > 90 or car.PrimaryPart.Orientation.X < -90 or car.PrimaryPart.Orientation.Z > 90 or car.PrimaryPart.Orientation.Z < -90 then
+                local fixCFrame = CFrame.new(car.PrimaryPart.Position) * CFrame.Angles(0, car.PrimaryPart.Orientation.Y, 0)
+                car:PivotTo(fixCFrame)
+            end
+        end
+    end
+end)
 
-local clearAnalyzerBtn = Instance.new("TextButton")
-clearAnalyzerBtn.Size = UDim2.new(1, 0, 0, 30)
-clearAnalyzerBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-clearAnalyzerBtn.Text = "Очистить логи"
-clearAnalyzerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-clearAnalyzerBtn.Font = Enum.Font.GothamBold
-clearAnalyzerBtn.TextSize = 14
-clearAnalyzerBtn.Parent = AnalyzerTab
-Instance.new("UICorner", clearAnalyzerBtn).CornerRadius = UDim.new(0, 6)
+-- =====================================================================
+-- УПРОЩЁННЫЙ GUI (С КНОПКАМИ ДЛЯ ВСЕХ ФУНКЦИЙ)
+-- =====================================================================
+local guiParent = CoreGui
+pcall(function()
+    if gethui then guiParent = gethui() end
+end)
 
-local logScroll = Instance.new("ScrollingFrame")
-logScroll.Size = UDim2.new(1, 0, 0, 250)
-logScroll.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-logScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-logScroll.ScrollBarThickness = 4
-logScroll.Parent = AnalyzerTab
-Instance.new("UICorner", logScroll).CornerRadius = UDim.new(0, 6)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MegaRamp_" .. tostring(math.random(1000,9999))
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = guiParent
 
-local logLabel = Instance.new("TextLabel")
-logLabel.Size = UDim2.new(1, -10, 0, 0)
-logLabel.AutomaticSize = Enum.AutomaticSize.Y
-logLabel.Position = UDim2.new(0, 5, 0, 5)
-logLabel.BackgroundTransparency = 1
-logLabel.Text = ""
-logLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-logLabel.TextSize = 12
-logLabel.Font = Enum.Font.Code
-logLabel.TextXAlignment = Enum.TextXAlignment.Left
-logLabel.TextYAlignment = Enum.TextYAlignment.Top
-logLabel.TextWrapped = true
-logLabel.Parent = logScroll
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 400, 0, 400)
+MainFrame.Position = UDim2.new(0.5, -200, 0.5, -200)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
 
-function updateAnalyzerUI()
-    local text = table.concat(loggedEvents, "\n")
-    logLabel.Text = text
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundTransparency = 1
+Title.Text = "MEGA RAMP | ULTIMATE"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.Parent = MainFrame
+
+-- Функция создания кнопки
+local function createButton(text, yPos, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 180, 0, 35)
+    btn.Position = UDim2.new(0.5, -90, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.Parent = MainFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    connectSignal(btn.MouseButton1Click, callback)
+    return btn
+end
+
+-- Кнопка полёта
+local flyToggle = createButton("Включить полёт (Fly)", 60, function()
+    isFlyEnabled = not isFlyEnabled
+    flyToggle.Text = isFlyEnabled and "Полёт включён" or "Включить полёт (Fly)"
+    flyToggle.BackgroundColor3 = isFlyEnabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
+end)
+
+-- Кнопка скорости
+local speedToggle = createButton("Включить скорость", 110, function()
+    isCustomSpeed = not isCustomSpeed
+    speedToggle.Text = isCustomSpeed and "Скорость: ВКЛ" or "Включить скорость"
+    speedToggle.BackgroundColor3 = isCustomSpeed and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
+end)
+
+-- Ползунок скорости (упрощённый)
+local speedSlider = Instance.new("TextButton")
+speedSlider.Size = UDim2.new(0, 180, 0, 35)
+speedSlider.Position = UDim2.new(0.5, -90, 0, 160)
+speedSlider.BackgroundColor3 = Color3.fromRGB(70, 70, 80)
+speedSlider.Text = "Скорость: 50"
+speedSlider.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedSlider.Font = Enum.Font.GothamBold
+speedSlider.TextSize = 14
+speedSlider.Parent = MainFrame
+Instance.new("UICorner", speedSlider).CornerRadius = UDim.new(0, 6)
+connectSignal(speedSlider.MouseButton1Click, function()
+    customSpeedValue = (customSpeedValue + 10) % 301
+    if customSpeedValue < 16 then customSpeedValue = 16 end
+    speedSlider.Text = "Скорость: " .. customSpeedValue
+end)
+
+-- Кнопка бесконечного прыжка
+local infJumpToggle = createButton("Бесконечный прыжок", 210, function()
+    isInfJump = not isInfJump
+    infJumpToggle.Text = isInfJump and "Беск. прыжок: ВКЛ" or "Бесконечный прыжок"
+    infJumpToggle.BackgroundColor3 = isInfJump and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
+end)
+
+-- Кнопка No-Clip
+local noClipToggle = createButton("No-Clip (сквозь стены)", 260, function()
+    isNoClip = not isNoClip
+    noClipToggle.Text = isNoClip and "No-Clip: ВКЛ" or "No-Clip (сквозь стены)"
+    noClipToggle.BackgroundColor3 = isNoClip and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
+end)
+
+-- Кнопка авто-переворота
+local autoFlipToggle = createButton("Авто-переворот машины", 310, function()
+    isAutoFlip = not isAutoFlip
+    autoFlipToggle.Text = isAutoFlip and "Авто-флип: ВКЛ" or "Авто-переворот машины"
+    autoFlipToggle.BackgroundColor3 = isAutoFlip and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
+end)
+
+-- Кнопка закрытия
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -35, 0, 5)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.Parent = MainFrame
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+connectSignal(closeBtn.MouseButton1Click, function()
     pcall(function()
-        task.wait(0.05)
-        logScroll.CanvasPosition = Vector2.new(0, logScroll.AbsoluteCanvasSize.Y)
+        if _G.MegaRampConnections then
+            for _, conn in ipairs(_G.MegaRampConnections) do
+                pcall(function() if conn and conn.Connected then conn:Disconnect() end end)
+            end
+        end
+        if ScreenGui then ScreenGui:Destroy() end
     end)
-end
-
-connectSignal(toggleAnalyzerBtn.MouseButton1Click, function()
-    isAnalyzing = not isAnalyzing
-    if isAnalyzing then
-        toggleAnalyzerBtn.Text = "Остановить запись"
-        toggleAnalyzerBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
-    else
-        toggleAnalyzerBtn.Text = "Начать запись"
-        toggleAnalyzerBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
-    end
 end)
 
-connectSignal(copyAnalyzerBtn.MouseButton1Click, function()
-    if setclipboard then
-        setclipboard(table.concat(loggedEvents, "\n"))
-        copyAnalyzerBtn.Text = "Скопировано!"
-        task.delay(2, function() copyAnalyzerBtn.Text = "Скопировать логи" end)
-    end
-end)
-
-connectSignal(clearAnalyzerBtn.MouseButton1Click, function()
-    table.clear(loggedEvents)
-    if updateAnalyzerUI then updateAnalyzerUI() end
-end)
-
--- MENU TOGGLE
-createLabel("КНОПКА МЕНЮ", MainTab)
-local currentToggleKey = Enum.KeyCode.RightShift
-local isBindingKey = false
-
-local bindFrame = Instance.new("Frame")
-bindFrame.Size = UDim2.new(1, 0, 0, 40)
-bindFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-bindFrame.Parent = MainTab
-Instance.new("UICorner", bindFrame).CornerRadius = UDim.new(0, 6)
-
-local bindLabel = Instance.new("TextLabel")
-bindLabel.Size = UDim2.new(1, -120, 1, 0)
-bindLabel.Position = UDim2.new(0, 10, 0, 0)
-bindLabel.BackgroundTransparency = 1
-bindLabel.Text = "Скрыть/Показать меню"
-bindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-bindLabel.Font = Enum.Font.Gotham
-bindLabel.TextSize = 14
-bindLabel.TextXAlignment = Enum.TextXAlignment.Left
-bindLabel.Parent = bindFrame
-
-local bindButton = Instance.new("TextButton")
-bindButton.Size = UDim2.new(0, 100, 0, 26)
-bindButton.Position = UDim2.new(1, -110, 0.5, -13)
-bindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-bindButton.Text = currentToggleKey.Name
-bindButton.TextColor3 = Color3.fromRGB(0, 255, 150)
-bindButton.Font = Enum.Font.GothamBold
-bindButton.TextSize = 12
-bindButton.Parent = bindFrame
-Instance.new("UICorner", bindButton).CornerRadius = UDim.new(0, 4)
-
-connectSignal(bindButton.MouseButton1Click, function()
-    isBindingKey = true
-    bindButton.Text = "..."
-    bindButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-end)
-
-local isMenuVisible = true
-connectSignal(UserInputService.InputBegan, function(input, gpe)
-    if isBindingKey and input.UserInputType == Enum.UserInputType.Keyboard then
-        currentToggleKey = input.KeyCode
-        bindButton.Text = currentToggleKey.Name
-        bindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-        isBindingKey = false
-        return
-    end
-    if not gpe and input.KeyCode == currentToggleKey then
-        isMenuVisible = not isMenuVisible
-        MainFrame.Visible = isMenuVisible
-    end
-end)
+-- =====================================================================
+-- ЗАПУСК
+-- =====================================================================
+print("MEGA RAMP FOR SLIME v5.0 loaded — ULTIMATE ANTI-CHEAT & FREE FLY active.")
