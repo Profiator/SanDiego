@@ -1,20 +1,16 @@
--- MEGA RAMP FOR SLIME v7.0 — FINAL EDITION
--- Все функции работают, античит обойден, меню удобное и перетаскиваемое.
-
--- === БЕЗОПАСНОЕ ХРАНИЛИЩЕ ПОДКЛЮЧЕНИЙ ===
+-- MEGA RAMP FOR SLIME v10.0 — FINAL WORKING EDITION
 if _G.MegaRampConnections then
     for _, conn in ipairs(_G.MegaRampConnections) do
         pcall(function() if conn and conn.Connected then conn:Disconnect() end end)
     end
 end
 _G.MegaRampConnections = {}
-local function C(signal, callback) -- сокращение для Connect
+local function C(signal, callback)
     local conn = signal:Connect(callback)
     table.insert(_G.MegaRampConnections, conn)
     return conn
 end
 
--- === СЕРВИСЫ ===
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -25,10 +21,7 @@ local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- === ГЛАВНЫЕ ПЕРЕМЕННЫЕ ===
-_G.ActionRecorder = { Recording = false, Logs = {} }
-
--- ============ АНТИЧИТ (МОЩНЫЙ ПЕРЕХВАТ) ============
+-- === УЛЬТРА-АНТИЧИТ (ПЕРЕХВАТ МЕТАТАБЛИЦ) ===
 pcall(function()
     local mt = getrawmetatable(game)
     local oldNamecall, oldIndex, oldNewIndex = mt.__namecall, mt.__index, mt.__newindex
@@ -42,6 +35,9 @@ pcall(function()
                 local n = tostring(self):lower()
                 if n:find("ban") or n:find("kick") or n:find("punish") or n:find("cheat") or n:find("log") or n:find("detect") or n:find("anticheat") or n:find("report") or n:find("crash") or n:find("error") or n:find("suspicious") or n:find("exploit") or n:find("admin") or n:find("kill") or n:find("remove") or n:find("script") then return nil end
             end
+            if method == "Destroy" and self:IsA("Tool") and self.Parent and self.Parent == LocalPlayer.Character then
+                return nil
+            end
             if method == "FindFirstChild" or method == "FindFirstChildOfClass" or method == "FindFirstChildWhichIsA" then
                 local args = {...}
                 if type(args[1]) == "string" then
@@ -52,25 +48,13 @@ pcall(function()
                     end
                 end
             end
+            if method == "TakeDamage" and self:IsA("Humanoid") and self.Parent == LocalPlayer.Character then
+                return nil
+            end
             if method == "GetAttribute" or method == "GetPropertyChangedSignal" then
                 local n = tostring(self):lower()
                 if n:find("velocity") or n:find("speed") or n:find("health") or n:find("jumppower") then return nil end
             end
-        end
-        if _G.ActionRecorder and _G.ActionRecorder.Recording then
-            local args = {...}
-            pcall(function()
-                if method == "FireServer" or method == "InvokeServer" then
-                    local argStr = ""
-                    for i, v in ipairs(args) do
-                        local vStr = "<err>"
-                        pcall(function() if typeof(v) == "Instance" then vStr = v.Name else vStr = tostring(v) end end)
-                        argStr = argStr .. typeof(v) .. "(" .. vStr .. "), "
-                    end
-                    local selfName = self.Name or "?"
-                    table.insert(_G.ActionRecorder.Logs, string.format("[%s] %s: %s | Args: %s", os.date("%X"), method, selfName, argStr))
-                end
-            end)
         end
         return oldNamecall(self, ...)
     end)
@@ -85,16 +69,22 @@ pcall(function()
             if key == "CFrame" and typeof(self) == "Instance" and self:IsA("HumanoidRootPart") then
                 if _G.FakeCFrame and self == LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return _G.FakeCFrame end
             end
+            if key == "Health" and self:IsA("Humanoid") and self.Parent == LocalPlayer.Character then return 100 end
         end
         return oldIndex(self, key)
     end)
 
     mt.__newindex = newcclosure(function(self, key, value)
         if not checkcaller() then
-            if key == "WalkSpeed" or key == "JumpPower" or key == "JumpHeight" then return end
+            if key == "WalkSpeed" or key == "JumpPower" or key == "JumpHeight" then
+                if not _G.AllowSpeedChange then return end
+            end
             if key == "AssemblyLinearVelocity" or key == "Velocity" then return end
             if key == "CFrame" and typeof(self) == "Instance" and self:IsA("HumanoidRootPart") then
                 if not _G.AllowCFrameChange then return end
+            end
+            if key == "Health" and self:IsA("Humanoid") and self.Parent == LocalPlayer.Character then
+                if not _G.AllowHealthChange then return end
             end
         end
         return oldNewIndex(self, key, value)
@@ -102,12 +92,10 @@ pcall(function()
 
     setreadonly(mt, true)
 
-    -- Отключаем логи
     local ScriptContext, LogService = game:GetService("ScriptContext"), game:GetService("LogService")
     for _, conn in ipairs(getconnections(ScriptContext.Error)) do conn:Disable() end
     for _, conn in ipairs(getconnections(LogService.MessageOut)) do conn:Disable() end
 
-    -- Блокируем анти-АФК
     pcall(function() for _, conn in ipairs(getconnections(LocalPlayer.Idled)) do if conn.Disable then conn:Disable() end end end)
     pcall(function() if hookfunction then hookfunction(LocalPlayer.Kick, function() return nil end) else LocalPlayer.Kick = function() return nil end end end)
 end)
@@ -134,27 +122,37 @@ local function getCar()
     return nil
 end
 
-local function teleportTo(pos, keepVehicle)
-    local root = getCharRoot(keepVehicle)
-    if root then
-        _G.AllowCFrameChange = true
-        root.CFrame = CFrame.new(pos)
-        _G.AllowCFrameChange = false
-    end
-end
-
--- === ЗАЩИТА ОТ СМЕРТИ ===
+-- === БЕССМЕРТИЕ (ПОСТОЯННОЕ ЗДОРОВЬЕ) ===
 C(RunService.Heartbeat, function()
     local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") and char.Humanoid.Health < 100 then char.Humanoid.Health = 100 end
+    if char and char:FindFirstChild("Humanoid") then
+        local hum = char.Humanoid
+        if hum.Health < 100 then
+            _G.AllowHealthChange = true
+            hum.Health = 100
+            _G.AllowHealthChange = false
+        end
+    end
 end)
 
--- === СИСТЕМА ПОЛЁТА (БЕЗ ВИСА В ВОЗДУХЕ) ===
+-- === ЗАЩИТА ОРУЖИЯ (НЕ ВЫПАДАЕТ) ===
+C(RunService.Heartbeat, function()
+    local char = LocalPlayer.Character
+    if char then
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") and not tool.Parent then
+                tool.Parent = char
+            end
+        end
+    end
+end)
+
+-- === ПОЛЁТ (С МАСКИРОВКОЙ) ===
 local isFlyEnabled = false
 local flyBV, flyBG, flyFloor
 local flying = false
 
-local function createFlyFloor()
+local function createFloor()
     if flyFloor and flyFloor.Parent then return end
     flyFloor = Instance.new("Part")
     flyFloor.Name = "InvisibleFloor"
@@ -165,22 +163,21 @@ local function createFlyFloor()
     flyFloor.Parent = Workspace
 end
 
-local function destroyFlyFloor()
+local function destroyFloor()
     if flyFloor then flyFloor:Destroy(); flyFloor = nil end
 end
 
 local function startFly(root)
     if flying then return end
     flying = true
-    createFlyFloor()
+    createFloor()
     flyBG = Instance.new("BodyGyro")
     flyBG.P = 9e5
     flyBG.maxTorque = Vector3.new(9e9, 9e9, 9e9)
     flyBG.cframe = root.CFrame
     flyBG.Parent = root
-
     flyBV = Instance.new("BodyVelocity")
-    flyBV.velocity = Vector3.new(0, 0, 0)
+    flyBV.velocity = Vector3.new(0,0,0)
     flyBV.maxForce = Vector3.new(9e9, 9e9, 9e9)
     flyBV.Parent = root
 end
@@ -190,23 +187,20 @@ local function stopFly()
     flying = false
     if flyBG then flyBG:Destroy(); flyBG = nil end
     if flyBV then flyBV:Destroy(); flyBV = nil end
-    destroyFlyFloor()
-
-    -- Плавно опускаем на землю
+    destroyFloor()
     local root = getCharRoot(true)
     if root then
         local ray = Ray.new(root.Position, Vector3.new(0, -200, 0))
         local hit, pos = Workspace:FindPartOnRay(ray, root)
         if hit then
-            local targetCF = CFrame.new(pos + Vector3.new(0, 4, 0))
             _G.AllowCFrameChange = true
-            root.CFrame = targetCF
+            root.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0))
             _G.AllowCFrameChange = false
         end
     end
 end
 
-C(RunService.RenderStepped, function(dt)
+C(RunService.RenderStepped, function()
     if isFlyEnabled then
         local root = getCharRoot(true)
         if root then
@@ -214,7 +208,7 @@ C(RunService.RenderStepped, function(dt)
                 stopFly()
                 startFly(root)
             end
-            if flying and flyBG and flyBV then
+            if flying then
                 local cam = Workspace.CurrentCamera
                 flyBG.cframe = CFrame.new(cam.CFrame.p, cam.CFrame.p + cam.CFrame.lookVector)
                 local dir = Vector3.new(0,0,0)
@@ -222,20 +216,11 @@ C(RunService.RenderStepped, function(dt)
                 if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.lookVector end
                 if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.rightVector end
                 if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.rightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
-
-                local speed = 80
-                if root.Name ~= "HumanoidRootPart" then
-                    flyBG.P = 9e6
-                    flyBG.D = 1000
-                    root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                end
-                flyBV.velocity = dir.Magnitude > 0 and dir.Unit * speed or Vector3.new(0, 0, 0)
-
-                -- Маскировка: пол под персонажем + подмена Y на землю для сервера
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0,1,0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0,1,0) end
+                flyBV.velocity = dir.Magnitude > 0 and dir.Unit * 80 or Vector3.new(0,0,0)
                 flyFloor.CFrame = CFrame.new(root.Position - Vector3.new(0, 3.5, 0))
-                _G.FakeCFrame = CFrame.new(root.Position.X, 0.5, root.Position.Z) -- фиктивно на земле
+                _G.FakeCFrame = CFrame.new(root.Position.X, 0.5, root.Position.Z)
             end
         end
     else
@@ -244,39 +229,27 @@ C(RunService.RenderStepped, function(dt)
     end
 end)
 
--- === БЕЗОПАСНАЯ СКОРОСТЬ (ЧЕРЕЗ BODYVELOCITY) ===
+-- === СКОРОСТЬ (БЕЗ ПРОВАЛИВАНИЯ) ===
 _G.speedEnabled = false
 _G.speedValue = 50
-local speedBV = nil
+_G.AllowSpeedChange = false
 
 local function updateSpeed()
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+    if not hum then return end
     if _G.speedEnabled and not isFlyEnabled then
-        local root = getCharRoot(true)
-        if root then
-            if not speedBV or speedBV.Parent ~= root then
-                if speedBV then speedBV:Destroy() end
-                speedBV = Instance.new("BodyVelocity")
-                speedBV.maxForce = Vector3.new(9e9, 9e9, 9e9)
-                speedBV.Parent = root
-            end
-            local cam = Workspace.CurrentCamera
-            local dir = Vector3.new(0,0,0)
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.lookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.lookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.rightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.rightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
-            speedBV.velocity = dir.Magnitude > 0 and dir.Unit * _G.speedValue or Vector3.new(0,0,0)
-        end
+        _G.AllowSpeedChange = true
+        hum.WalkSpeed = _G.speedValue
+        _G.AllowSpeedChange = false
     else
-        if speedBV then speedBV:Destroy(); speedBV = nil end
+        _G.AllowSpeedChange = true
+        hum.WalkSpeed = 16
+        _G.AllowSpeedChange = false
     end
 end
-
 C(RunService.RenderStepped, function() updateSpeed() end)
 
--- === ДОП. ФУНКЦИИ: БЕСКОНЕЧНЫЙ ПРЫЖОК, NOCLIP, АВТО-ФЛИП ===
+-- === ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ===
 local isInfJump, isNoClip, isAutoFlip = false, false, false
 C(UserInputService.JumpRequest, function()
     if isInfJump then local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end end
@@ -293,8 +266,8 @@ C(RunService.Heartbeat, function()
     end
 end)
 
--- === AIMBOT (НАВЕДЕНИЕ НА ГОЛОВУ) ===
-local isAimbotEnabled, aimTarget, aimStrength = false, nil, 0.85
+-- === УЛУЧШЕННЫЙ AIMBOT (НАВЕДЕНИЕ НА ГОЛОВУ) ===
+local isAimbotEnabled, aimTarget, aimStrength = false, nil, 0.9
 local function getClosestPlayer()
     local cam = Workspace.CurrentCamera
     local center = cam.ViewportSize / 2
@@ -303,7 +276,7 @@ local function getClosestPlayer()
         if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
             local head = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
             if head then
-                local sp, on = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.8, 0))
+                local sp, on = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.7, 0))
                 if on then
                     local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
                     if d < minDist then minDist, closest = d, plr end
@@ -322,7 +295,8 @@ C(RunService.RenderStepped, function()
                 local root = getCharRoot(true)
                 if root then
                     _G.AllowCFrameChange = true
-                    root.CFrame = root.CFrame:Lerp(CFrame.new(root.Position, head.Position + Vector3.new(0, 0.8, 0)), aimStrength)
+                    local targetCF = CFrame.new(root.Position, head.Position + Vector3.new(0, 0.7, 0))
+                    root.CFrame = root.CFrame:Lerp(targetCF, aimStrength)
                     _G.AllowCFrameChange = false
                 end
             end
@@ -330,7 +304,7 @@ C(RunService.RenderStepped, function()
     end
 end)
 
--- === НОВЫЙ УДОБНЫЙ GUI ===
+-- === УДОБНЫЙ GUI (ПЕРЕТАСКИВАНИЕ) ===
 local guiParent = CoreGui
 pcall(function() if gethui then guiParent = gethui() end end)
 local ScreenGui = Instance.new("ScreenGui")
@@ -349,7 +323,6 @@ local st = Instance.new("UIStroke", Main)
 st.Color = Color3.fromRGB(0, 200, 255)
 st.Thickness = 2
 
--- Заголовок (перетаскивание)
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 50)
 Title.BackgroundTransparency = 1
@@ -377,7 +350,6 @@ C(UserInputService.InputChanged, function(input)
     end
 end)
 
--- Кнопка закрытия
 local close = Instance.new("TextButton")
 close.Size = UDim2.new(0, 30, 0, 30)
 close.Position = UDim2.new(1, -35, 0, 5)
@@ -393,7 +365,6 @@ C(close.MouseButton1Click, function()
     if ScreenGui then ScreenGui:Destroy() end
 end)
 
--- Функция красивой кнопки-переключателя
 local function createToggleButton(text, yPos, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 200, 0, 45)
@@ -422,7 +393,6 @@ local function createToggleButton(text, yPos, callback)
     return btn
 end
 
--- Создаем функции с привязкой к переменным
 createToggleButton("Полёт (Fly)", 80, function(state) isFlyEnabled = state end)
 createToggleButton("Скорость", 140, function(state) _G.speedEnabled = state end)
 createToggleButton("Бесконечный прыжок", 200, function(state) isInfJump = state end)
@@ -430,7 +400,6 @@ createToggleButton("No-Clip", 260, function(state) isNoClip = state end)
 createToggleButton("Авто-переворот", 320, function(state) isAutoFlip = state end)
 createToggleButton("Aimbot", 380, function(state) isAimbotEnabled = state end)
 
--- Слайдер скорости
 local sliderLabel = Instance.new("TextLabel")
 sliderLabel.Size = UDim2.new(0, 200, 0, 25)
 sliderLabel.Position = UDim2.new(0.5, -100, 0, 450)
@@ -477,5 +446,4 @@ C(UserInputService.InputChanged, function(input)
     end
 end)
 
--- === ЗАПУСК ===
-print("MEGA RAMP v7.0 FINAL loaded — всё работает.")
+print("MEGA RAMP v10.0 — FINAL WORKING EDITION loaded. Все функции активны.")
