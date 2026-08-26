@@ -1,449 +1,224 @@
--- MEGA RAMP FOR SLIME v10.0 — FINAL WORKING EDITION
-if _G.MegaRampConnections then
-    for _, conn in ipairs(_G.MegaRampConnections) do
-        pcall(function() if conn and conn.Connected then conn:Disconnect() end end)
+-- ============================================================
+-- FLY SCRIPT + КООРДИНАТЫ
+-- Версия 1.0
+-- Включает режим полёта с управлением WASD + Пробел/Shift
+-- Показывает текущие координаты с точностью до 2 знаков
+-- ============================================================
+
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+
+-- Переменные состояния
+local flyEnabled = false
+local flySpeed = 50
+local bodyVelocity = nil
+local bodyGyro = nil
+
+-- Создаём GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FlyCoordGUI"
+screenGui.Parent = player:WaitForChild("PlayerGui")
+screenGui.ResetOnSpawn = false
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 240, 0, 180)
+mainFrame.Position = UDim2.new(0.5, -120, 0.5, -90)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+mainFrame.BorderSizePixel = 1
+mainFrame.BorderColor3 = Color3.fromRGB(0, 200, 255)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+title.Text = "🛸 FLY + COORD"
+title.TextColor3 = Color3.fromRGB(0, 0, 0)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = mainFrame
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -35, 0, 0)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextScaled = true
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Parent = mainFrame
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+-- Кнопка включения полёта
+local flyBtn = Instance.new("TextButton")
+flyBtn.Size = UDim2.new(0, 100, 0, 30)
+flyBtn.Position = UDim2.new(0, 10, 0, 40)
+flyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+flyBtn.Text = "ВКЛ"
+flyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+flyBtn.TextScaled = true
+flyBtn.Font = Enum.Font.GothamBold
+flyBtn.Parent = mainFrame
+
+-- Текст координат
+local coordLabel = Instance.new("TextLabel")
+coordLabel.Size = UDim2.new(1, -20, 0, 30)
+coordLabel.Position = UDim2.new(0, 10, 0, 85)
+coordLabel.BackgroundTransparency = 1
+coordLabel.Text = "X: 0.00  Y: 0.00  Z: 0.00"
+coordLabel.TextColor3 = Color3.fromRGB(200, 255, 200)
+coordLabel.TextSize = 16
+coordLabel.Font = Enum.Font.Code
+coordLabel.Parent = mainFrame
+
+local speedSlider = Instance.new("TextBox")
+speedSlider.Size = UDim2.new(0, 80, 0, 25)
+speedSlider.Position = UDim2.new(0, 120, 0, 40)
+speedSlider.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+speedSlider.Text = tostring(flySpeed)
+speedSlider.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedSlider.TextSize = 14
+speedSlider.Font = Enum.Font.Gotham
+speedSlider.Parent = mainFrame
+speedSlider.FocusLost:Connect(function()
+    local val = tonumber(speedSlider.Text)
+    if val and val > 0 then
+        flySpeed = val
+    else
+        speedSlider.Text = tostring(flySpeed)
+    end
+end)
+
+-- Функция обновления координат
+local function updateCoordDisplay()
+    if not rootPart then return end
+    local pos = rootPart.Position
+    coordLabel.Text = string.format("X: %.2f  Y: %.2f  Z: %.2f", pos.X, pos.Y, pos.Z)
+end
+
+-- Функция включения полёта
+local function enableFly()
+    if not character or not rootPart then return end
+    humanoid.PlatformStand = true
+    humanoid.AutoRotate = false
+
+    -- BodyVelocity для движения
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+    bodyVelocity.P = 1e5
+    bodyVelocity.Parent = rootPart
+
+    -- BodyGyro для контроля ориентации
+    bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+    bodyGyro.P = 1e5
+    bodyGyro.CFrame = rootPart.CFrame
+    bodyGyro.Parent = rootPart
+end
+
+-- Функция отключения полёта
+local function disableFly()
+    if bodyVelocity then bodyVelocity:Destroy() end
+    if bodyGyro then bodyGyro:Destroy() end
+    bodyVelocity = nil
+    bodyGyro = nil
+    humanoid.PlatformStand = false
+    humanoid.AutoRotate = true
+end
+
+-- Обработчик клика по кнопке
+flyBtn.MouseButton1Click:Connect(function()
+    flyEnabled = not flyEnabled
+    flyBtn.Text = flyEnabled and "ВЫКЛ" or "ВКЛ"
+    flyBtn.BackgroundColor3 = flyEnabled and Color3.fromRGB(200, 0, 0) or Color3.fromRGB(60, 60, 80)
+
+    if flyEnabled then
+        enableFly()
+    else
+        disableFly()
+    end
+end)
+
+-- Обновление движения в каждом кадре
+local function updateFly()
+    if not flyEnabled then return end
+    if not character or not rootPart then return end
+
+    local moveDirection = Vector3.new(0, 0, 0)
+    local camera = workspace.CurrentCamera
+    local forward = camera.CFrame.LookVector
+    local right = camera.CFrame.RightVector
+    local up = camera.CFrame.UpVector
+
+    -- WASD
+    if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.W) then
+        moveDirection = moveDirection + forward
+    end
+    if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.S) then
+        moveDirection = moveDirection - forward
+    end
+    if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.A) then
+        moveDirection = moveDirection - right
+    end
+    if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.D) then
+        moveDirection = moveDirection + right
+    end
+    if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.Space) then
+        moveDirection = moveDirection + up
+    end
+    if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftShift) then
+        moveDirection = moveDirection - up
+    end
+
+    if moveDirection.Magnitude > 0 then
+        moveDirection = moveDirection.Unit * flySpeed
+    else
+        moveDirection = Vector3.new(0, 0, 0)
+    end
+
+    bodyVelocity.Velocity = moveDirection
+
+    -- Обновляем ориентацию (смотрим в направлении движения)
+    if moveDirection.Magnitude > 0.1 then
+        local lookCFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + moveDirection)
+        bodyGyro.CFrame = lookCFrame
     end
 end
-_G.MegaRampConnections = {}
-local function C(signal, callback)
-    local conn = signal:Connect(callback)
-    table.insert(_G.MegaRampConnections, conn)
-    return conn
-end
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local TweenService = game:GetService("TweenService")
-local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
-local LocalPlayer = Players.LocalPlayer
+-- Главный цикл (сборка)
+local connection = game:GetService("RunService").Heartbeat:Connect(function()
+    updateCoordDisplay()
+    updateFly()
+end)
 
--- === УЛЬТРА-АНТИЧИТ (ПЕРЕХВАТ МЕТАТАБЛИЦ) ===
+-- Обработка смены персонажа (респавн)
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:WaitForChild("Humanoid")
+    if flyEnabled then
+        disableFly()
+        flyEnabled = false
+        flyBtn.Text = "ВКЛ"
+        flyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    end
+end)
+
+-- Отключаем при остановке скрипта
 pcall(function()
-    local mt = getrawmetatable(game)
-    local oldNamecall, oldIndex, oldNewIndex = mt.__namecall, mt.__index, mt.__newindex
-    setreadonly(mt, false)
-
-    mt.__namecall = newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        if not checkcaller() then
-            if method == "Kick" or method == "kick" or method == "Teleport" or method == "TeleportToPlaceInstance" then return nil end
-            if method == "FireServer" or method == "InvokeServer" then
-                local n = tostring(self):lower()
-                if n:find("ban") or n:find("kick") or n:find("punish") or n:find("cheat") or n:find("log") or n:find("detect") or n:find("anticheat") or n:find("report") or n:find("crash") or n:find("error") or n:find("suspicious") or n:find("exploit") or n:find("admin") or n:find("kill") or n:find("remove") or n:find("script") then return nil end
-            end
-            if method == "Destroy" and self:IsA("Tool") and self.Parent and self.Parent == LocalPlayer.Character then
-                return nil
-            end
-            if method == "FindFirstChild" or method == "FindFirstChildOfClass" or method == "FindFirstChildWhichIsA" then
-                local args = {...}
-                if type(args[1]) == "string" then
-                    local x = tostring(args[1])
-                    if x:find("BodyVelocity") or x:find("BodyGyro") or x:find("BodyForce") or x:find("AlignPosition") or x:find("LinearVelocity") then
-                        local lp = Players.LocalPlayer
-                        if lp and lp.Character and self:IsDescendantOf(lp.Character) then return nil end
-                    end
-                end
-            end
-            if method == "TakeDamage" and self:IsA("Humanoid") and self.Parent == LocalPlayer.Character then
-                return nil
-            end
-            if method == "GetAttribute" or method == "GetPropertyChangedSignal" then
-                local n = tostring(self):lower()
-                if n:find("velocity") or n:find("speed") or n:find("health") or n:find("jumppower") then return nil end
-            end
+    screenGui.AncestryChanged:Connect(function()
+        if not screenGui.Parent then
+            if flyEnabled then disableFly() end
+            connection:Disconnect()
         end
-        return oldNamecall(self, ...)
     end)
-
-    mt.__index = newcclosure(function(self, key)
-        if not checkcaller() then
-            if key == "WalkSpeed" then return 16 end
-            if key == "JumpPower" then return 50 end
-            if key == "JumpHeight" then return 7.2 end
-            if key == "Transparency" and self:IsA("BasePart") then return 0 end
-            if key == "AssemblyLinearVelocity" and self:IsA("BasePart") then return Vector3.new(0,0,0) end
-            if key == "CFrame" and typeof(self) == "Instance" and self:IsA("HumanoidRootPart") then
-                if _G.FakeCFrame and self == LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return _G.FakeCFrame end
-            end
-            if key == "Health" and self:IsA("Humanoid") and self.Parent == LocalPlayer.Character then return 100 end
-        end
-        return oldIndex(self, key)
-    end)
-
-    mt.__newindex = newcclosure(function(self, key, value)
-        if not checkcaller() then
-            if key == "WalkSpeed" or key == "JumpPower" or key == "JumpHeight" then
-                if not _G.AllowSpeedChange then return end
-            end
-            if key == "AssemblyLinearVelocity" or key == "Velocity" then return end
-            if key == "CFrame" and typeof(self) == "Instance" and self:IsA("HumanoidRootPart") then
-                if not _G.AllowCFrameChange then return end
-            end
-            if key == "Health" and self:IsA("Humanoid") and self.Parent == LocalPlayer.Character then
-                if not _G.AllowHealthChange then return end
-            end
-        end
-        return oldNewIndex(self, key, value)
-    end)
-
-    setreadonly(mt, true)
-
-    local ScriptContext, LogService = game:GetService("ScriptContext"), game:GetService("LogService")
-    for _, conn in ipairs(getconnections(ScriptContext.Error)) do conn:Disable() end
-    for _, conn in ipairs(getconnections(LogService.MessageOut)) do conn:Disable() end
-
-    pcall(function() for _, conn in ipairs(getconnections(LocalPlayer.Idled)) do if conn.Disable then conn:Disable() end end end)
-    pcall(function() if hookfunction then hookfunction(LocalPlayer.Kick, function() return nil end) else LocalPlayer.Kick = function() return nil end end end)
 end)
 
--- === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
-local function getCharRoot(preferVehicle)
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    local hum = char:FindFirstChild("Humanoid")
-    if preferVehicle and hum and hum.SeatPart and hum.SeatPart:IsA("VehicleSeat") then
-        local veh = hum.SeatPart:FindFirstAncestorWhichIsA("Model")
-        if veh and veh.PrimaryPart then return veh.PrimaryPart end
-        return hum.SeatPart
-    end
-    return char:FindFirstChild("HumanoidRootPart")
-end
-
-local function getCar()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        local hum = char.Humanoid
-        if hum.SeatPart and hum.SeatPart:IsA("VehicleSeat") then return hum.SeatPart:FindFirstAncestorWhichIsA("Model") end
-    end
-    return nil
-end
-
--- === БЕССМЕРТИЕ (ПОСТОЯННОЕ ЗДОРОВЬЕ) ===
-C(RunService.Heartbeat, function()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        local hum = char.Humanoid
-        if hum.Health < 100 then
-            _G.AllowHealthChange = true
-            hum.Health = 100
-            _G.AllowHealthChange = false
-        end
-    end
-end)
-
--- === ЗАЩИТА ОРУЖИЯ (НЕ ВЫПАДАЕТ) ===
-C(RunService.Heartbeat, function()
-    local char = LocalPlayer.Character
-    if char then
-        for _, tool in ipairs(char:GetChildren()) do
-            if tool:IsA("Tool") and not tool.Parent then
-                tool.Parent = char
-            end
-        end
-    end
-end)
-
--- === ПОЛЁТ (С МАСКИРОВКОЙ) ===
-local isFlyEnabled = false
-local flyBV, flyBG, flyFloor
-local flying = false
-
-local function createFloor()
-    if flyFloor and flyFloor.Parent then return end
-    flyFloor = Instance.new("Part")
-    flyFloor.Name = "InvisibleFloor"
-    flyFloor.Size = Vector3.new(12, 1, 12)
-    flyFloor.Transparency = 1
-    flyFloor.CanCollide = true
-    flyFloor.Anchored = true
-    flyFloor.Parent = Workspace
-end
-
-local function destroyFloor()
-    if flyFloor then flyFloor:Destroy(); flyFloor = nil end
-end
-
-local function startFly(root)
-    if flying then return end
-    flying = true
-    createFloor()
-    flyBG = Instance.new("BodyGyro")
-    flyBG.P = 9e5
-    flyBG.maxTorque = Vector3.new(9e9, 9e9, 9e9)
-    flyBG.cframe = root.CFrame
-    flyBG.Parent = root
-    flyBV = Instance.new("BodyVelocity")
-    flyBV.velocity = Vector3.new(0,0,0)
-    flyBV.maxForce = Vector3.new(9e9, 9e9, 9e9)
-    flyBV.Parent = root
-end
-
-local function stopFly()
-    if not flying then return end
-    flying = false
-    if flyBG then flyBG:Destroy(); flyBG = nil end
-    if flyBV then flyBV:Destroy(); flyBV = nil end
-    destroyFloor()
-    local root = getCharRoot(true)
-    if root then
-        local ray = Ray.new(root.Position, Vector3.new(0, -200, 0))
-        local hit, pos = Workspace:FindPartOnRay(ray, root)
-        if hit then
-            _G.AllowCFrameChange = true
-            root.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0))
-            _G.AllowCFrameChange = false
-        end
-    end
-end
-
-C(RunService.RenderStepped, function()
-    if isFlyEnabled then
-        local root = getCharRoot(true)
-        if root then
-            if not flying or (flyBG and flyBG.Parent ~= root) then
-                stopFly()
-                startFly(root)
-            end
-            if flying then
-                local cam = Workspace.CurrentCamera
-                flyBG.cframe = CFrame.new(cam.CFrame.p, cam.CFrame.p + cam.CFrame.lookVector)
-                local dir = Vector3.new(0,0,0)
-                if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.lookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.lookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.rightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.rightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0,1,0) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0,1,0) end
-                flyBV.velocity = dir.Magnitude > 0 and dir.Unit * 80 or Vector3.new(0,0,0)
-                flyFloor.CFrame = CFrame.new(root.Position - Vector3.new(0, 3.5, 0))
-                _G.FakeCFrame = CFrame.new(root.Position.X, 0.5, root.Position.Z)
-            end
-        end
-    else
-        stopFly()
-        if not _G.speedEnabled then _G.FakeCFrame = nil end
-    end
-end)
-
--- === СКОРОСТЬ (БЕЗ ПРОВАЛИВАНИЯ) ===
-_G.speedEnabled = false
-_G.speedValue = 50
-_G.AllowSpeedChange = false
-
-local function updateSpeed()
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-    if not hum then return end
-    if _G.speedEnabled and not isFlyEnabled then
-        _G.AllowSpeedChange = true
-        hum.WalkSpeed = _G.speedValue
-        _G.AllowSpeedChange = false
-    else
-        _G.AllowSpeedChange = true
-        hum.WalkSpeed = 16
-        _G.AllowSpeedChange = false
-    end
-end
-C(RunService.RenderStepped, function() updateSpeed() end)
-
--- === ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ===
-local isInfJump, isNoClip, isAutoFlip = false, false, false
-C(UserInputService.JumpRequest, function()
-    if isInfJump then local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end end
-end)
-C(RunService.Stepped, function()
-    if isNoClip and LocalPlayer.Character then for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end
-end)
-C(RunService.Heartbeat, function()
-    if isAutoFlip then
-        local car = getCar()
-        if car and car.PrimaryPart and (car.PrimaryPart.Orientation.X > 90 or car.PrimaryPart.Orientation.X < -90 or car.PrimaryPart.Orientation.Z > 90 or car.PrimaryPart.Orientation.Z < -90) then
-            car:PivotTo(CFrame.new(car.PrimaryPart.Position) * CFrame.Angles(0, car.PrimaryPart.Orientation.Y, 0))
-        end
-    end
-end)
-
--- === УЛУЧШЕННЫЙ AIMBOT (НАВЕДЕНИЕ НА ГОЛОВУ) ===
-local isAimbotEnabled, aimTarget, aimStrength = false, nil, 0.9
-local function getClosestPlayer()
-    local cam = Workspace.CurrentCamera
-    local center = cam.ViewportSize / 2
-    local closest, minDist = nil, math.huge
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
-            local head = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
-            if head then
-                local sp, on = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.7, 0))
-                if on then
-                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                    if d < minDist then minDist, closest = d, plr end
-                end
-            end
-        end
-    end
-    return closest
-end
-C(RunService.RenderStepped, function()
-    if isAimbotEnabled then
-        aimTarget = getClosestPlayer()
-        if aimTarget and aimTarget.Character then
-            local head = aimTarget.Character:FindFirstChild("Head") or aimTarget.Character:FindFirstChild("HumanoidRootPart")
-            if head then
-                local root = getCharRoot(true)
-                if root then
-                    _G.AllowCFrameChange = true
-                    local targetCF = CFrame.new(root.Position, head.Position + Vector3.new(0, 0.7, 0))
-                    root.CFrame = root.CFrame:Lerp(targetCF, aimStrength)
-                    _G.AllowCFrameChange = false
-                end
-            end
-        end
-    end
-end)
-
--- === УДОБНЫЙ GUI (ПЕРЕТАСКИВАНИЕ) ===
-local guiParent = CoreGui
-pcall(function() if gethui then guiParent = gethui() end end)
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MegaRampGUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = guiParent
-
-local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 480, 0, 620)
-Main.Position = UDim2.new(0.5, -240, 0.5, -310)
-Main.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-Main.BorderSizePixel = 0
-Main.Parent = ScreenGui
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 14)
-local st = Instance.new("UIStroke", Main)
-st.Color = Color3.fromRGB(0, 200, 255)
-st.Thickness = 2
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 50)
-Title.BackgroundTransparency = 1
-Title.Text = "MEGA RAMP | ULTIMATE"
-Title.TextColor3 = Color3.fromRGB(255,255,255)
-Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 22
-Title.Parent = Main
-local grad = Instance.new("UIGradient", Title)
-grad.Rotation = 45
-grad.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(0,200,255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(255,0,255))})
-
-local dragging, dragStart, startPos = false, nil, nil
-C(Title.InputBegan, function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging, dragStart, startPos = true, input.Position, Main.Position
-        C(input.Changed, function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-    end
-end)
-C(Title.InputChanged, function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end end)
-C(UserInputService.InputChanged, function(input)
-    if dragging and input == dragInput then
-        local delta = input.Position - dragStart
-        Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
-local close = Instance.new("TextButton")
-close.Size = UDim2.new(0, 30, 0, 30)
-close.Position = UDim2.new(1, -35, 0, 5)
-close.BackgroundColor3 = Color3.fromRGB(200,50,50)
-close.Text = "X"
-close.TextColor3 = Color3.fromRGB(255,255,255)
-close.Font = Enum.Font.GothamBold
-close.TextSize = 14
-close.Parent = Main
-Instance.new("UICorner", close).CornerRadius = UDim.new(0, 6)
-C(close.MouseButton1Click, function()
-    for _, conn in ipairs(_G.MegaRampConnections) do pcall(function() if conn and conn.Connected then conn:Disconnect() end end) end
-    if ScreenGui then ScreenGui:Destroy() end
-end)
-
-local function createToggleButton(text, yPos, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 200, 0, 45)
-    btn.Position = UDim2.new(0.5, -100, 0, yPos)
-    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(255,255,255)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 14
-    btn.Parent = Main
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
-    local btnStroke = Instance.new("UIStroke", btn)
-    btnStroke.Color = Color3.fromRGB(0, 200, 255)
-    btnStroke.Thickness = 1
-    local state = false
-    local function updateState()
-        btn.BackgroundColor3 = state and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(35, 35, 45)
-        btn.Text = (state and "✓ " or "") .. text
-    end
-    C(btn.MouseButton1Click, function()
-        state = not state
-        updateState()
-        if callback then callback(state) end
-    end)
-    updateState()
-    return btn
-end
-
-createToggleButton("Полёт (Fly)", 80, function(state) isFlyEnabled = state end)
-createToggleButton("Скорость", 140, function(state) _G.speedEnabled = state end)
-createToggleButton("Бесконечный прыжок", 200, function(state) isInfJump = state end)
-createToggleButton("No-Clip", 260, function(state) isNoClip = state end)
-createToggleButton("Авто-переворот", 320, function(state) isAutoFlip = state end)
-createToggleButton("Aimbot", 380, function(state) isAimbotEnabled = state end)
-
-local sliderLabel = Instance.new("TextLabel")
-sliderLabel.Size = UDim2.new(0, 200, 0, 25)
-sliderLabel.Position = UDim2.new(0.5, -100, 0, 450)
-sliderLabel.BackgroundTransparency = 1
-sliderLabel.Text = "Скорость: " .. _G.speedValue
-sliderLabel.TextColor3 = Color3.fromRGB(255,255,255)
-sliderLabel.Font = Enum.Font.GothamBold
-sliderLabel.TextSize = 14
-sliderLabel.Parent = Main
-
-local sliderBG = Instance.new("Frame")
-sliderBG.Size = UDim2.new(0, 200, 0, 8)
-sliderBG.Position = UDim2.new(0.5, -100, 0, 485)
-sliderBG.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-sliderBG.Parent = Main
-Instance.new("UICorner", sliderBG).CornerRadius = UDim.new(1, 0)
-
-local sliderFill = Instance.new("Frame")
-sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
-sliderFill.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
-sliderFill.Parent = sliderBG
-Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
-
-local sliderBtn = Instance.new("TextButton")
-sliderBtn.Size = UDim2.new(1, 0, 1, 10)
-sliderBtn.Position = UDim2.new(0, 0, 0, -5)
-sliderBtn.BackgroundTransparency = 1
-sliderBtn.Text = ""
-sliderBtn.Parent = sliderBG
-
-local isDragging = false
-C(sliderBtn.InputBegan, function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDragging = true end
-end)
-C(UserInputService.InputEnded, function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDragging = false end
-end)
-C(UserInputService.InputChanged, function(input)
-    if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local rel = math.clamp((input.Position.X - sliderBG.AbsolutePosition.X) / sliderBG.AbsoluteSize.X, 0, 1)
-        _G.speedValue = math.floor(16 + ((300 - 16) * rel))
-        sliderFill.Size = UDim2.new(rel, 0, 1, 0)
-        sliderLabel.Text = "Скорость: " .. _G.speedValue
-    end
-end)
-
-print("MEGA RAMP v10.0 — FINAL WORKING EDITION loaded. Все функции активны.")
+print("✅ Fly + Coord скрипт загружен!")
+print("Используйте WASD + Пробел/Shift для управления.")
+print("Координаты обновляются в меню.")
