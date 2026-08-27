@@ -1,278 +1,799 @@
--- ============================================================
--- FLY + SPRINT + КООРДИНАТЫ
--- Версия 2.0
--- Полёт: WASD + Пробел/Shift, скорость до 999
--- Бег: Вкл/Выкл, скорость до 300
--- Показывает координаты с точностью до 2 знаков
--- ============================================================
+--==================================================
+-- AIM ASSIST SYSTEM + MENU
+-- StarterPlayer > StarterPlayerScripts > LocalScript
+--==================================================
 
-local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
-local humanoid = character:WaitForChild("Humanoid")
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
--- Состояния
-local flyEnabled = false
-local flySpeed = 50
-local bodyVelocity = nil
-local bodyGyro = nil
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
-local runEnabled = false
-local runSpeed = 50
-local defaultWalkSpeed = 16
+--==================================================
+-- CONFIG
+--==================================================
 
+local Config = {
+	Enabled = true,
+
+	-- оружие
+	PistolEnabled = true,
+	AWPEnabled = true,
+
+	-- Head / Body
+	AimPart = "Head",
+
+	-- Кнопка AIM
+	AimKey = Enum.KeyCode.Q,
+
+	-- Размер круга
+	FOV = 180,
+
+	-- Плавность
+	-- больше = быстрее
+	Smoothness = 0.15,
+
+	-- проверки
+	TeamCheck = true,
+	WallCheck = true,
+
+	MaxDistance = 3000,
+
+	ShowFOV = true
+}
+
+-- Названия оружия в твоей игре
+local PISTOL_NAMES = {
+	"Pistol",
+	"Glock",
+	"USP",
+	"Deagle",
+	"Desert Eagle"
+}
+
+local AWP_NAMES = {
+	"AWP",
+	"Sniper",
+	"Sniper Rifle"
+}
+
+--==================================================
+-- VARIABLES
+--==================================================
+
+local aiming = false
+local waitingForBind = false
+local currentTarget = nil
+
+--==================================================
 -- GUI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "FlyCoordGUI"
-screenGui.Parent = player:WaitForChild("PlayerGui")
-screenGui.ResetOnSpawn = false
+--==================================================
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 280, 0, 250)
-mainFrame.Position = UDim2.new(0.5, -140, 0.5, -125)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-mainFrame.BorderSizePixel = 1
-mainFrame.BorderColor3 = Color3.fromRGB(0, 200, 255)
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AimSystemGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 30)
-title.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
-title.Text = "🛸 FLY + SPRINT + COORD"
-title.TextColor3 = Color3.fromRGB(0, 0, 0)
-title.TextScaled = true
-title.Font = Enum.Font.GothamBold
-title.Parent = mainFrame
+--==================================================
+-- FOV CIRCLE
+--==================================================
 
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 30, 0, 30)
-closeBtn.Position = UDim2.new(1, -35, 0, 0)
-closeBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-closeBtn.Text = "✕"
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.TextScaled = true
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.Parent = mainFrame
-closeBtn.MouseButton1Click:Connect(function()
-    screenGui:Destroy()
-end)
+local FOVCircle = Instance.new("Frame")
+FOVCircle.Name = "FOVCircle"
+FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVCircle.BackgroundTransparency = 1
+FOVCircle.ZIndex = 1
+FOVCircle.Parent = ScreenGui
 
--- === Блок полёта ===
-local flyBtn = Instance.new("TextButton")
-flyBtn.Size = UDim2.new(0, 80, 0, 30)
-flyBtn.Position = UDim2.new(0, 10, 0, 40)
-flyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-flyBtn.Text = "✈ ВКЛ"
-flyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-flyBtn.TextScaled = true
-flyBtn.Font = Enum.Font.GothamBold
-flyBtn.Parent = mainFrame
+local CircleCorner = Instance.new("UICorner")
+CircleCorner.CornerRadius = UDim.new(1, 0)
+CircleCorner.Parent = FOVCircle
 
-local flySpeedBox = Instance.new("TextBox")
-flySpeedBox.Size = UDim2.new(0, 60, 0, 25)
-flySpeedBox.Position = UDim2.new(0, 100, 0, 42)
-flySpeedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-flySpeedBox.Text = tostring(flySpeed)
-flySpeedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-flySpeedBox.TextSize = 14
-flySpeedBox.Font = Enum.Font.Gotham
-flySpeedBox.Parent = mainFrame
-flySpeedBox.FocusLost:Connect(function()
-    local val = tonumber(flySpeedBox.Text)
-    if val and val > 0 then
-        flySpeed = val
-    else
-        flySpeedBox.Text = tostring(flySpeed)
-    end
-end)
+local CircleStroke = Instance.new("UIStroke")
+CircleStroke.Thickness = 1.5
+CircleStroke.Transparency = 0.15
+CircleStroke.Color = Color3.fromRGB(255,255,255)
+CircleStroke.Parent = FOVCircle
 
--- === Блок бега ===
-local runBtn = Instance.new("TextButton")
-runBtn.Size = UDim2.new(0, 80, 0, 30)
-runBtn.Position = UDim2.new(0, 10, 0, 80)
-runBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-runBtn.Text = "🏃 ВКЛ"
-runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-runBtn.TextScaled = true
-runBtn.Font = Enum.Font.GothamBold
-runBtn.Parent = mainFrame
+--==================================================
+-- MENU
+--==================================================
 
-local runSpeedBox = Instance.new("TextBox")
-runSpeedBox.Size = UDim2.new(0, 60, 0, 25)
-runSpeedBox.Position = UDim2.new(0, 100, 0, 82)
-runSpeedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-runSpeedBox.Text = tostring(runSpeed)
-runSpeedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-runSpeedBox.TextSize = 14
-runSpeedBox.Font = Enum.Font.Gotham
-runSpeedBox.Parent = mainFrame
-runSpeedBox.FocusLost:Connect(function()
-    local val = tonumber(runSpeedBox.Text)
-    if val and val >= 0 then
-        runSpeed = val
-        if runEnabled then
-            humanoid.WalkSpeed = runSpeed
-        end
-    else
-        runSpeedBox.Text = tostring(runSpeed)
-    end
-end)
+local Menu = Instance.new("Frame")
+Menu.Name = "AimMenu"
+Menu.Size = UDim2.fromOffset(320, 410)
+Menu.Position = UDim2.new(0, 30, 0.5, -205)
+Menu.BackgroundColor3 = Color3.fromRGB(20,20,24)
+Menu.BorderSizePixel = 0
+Menu.ZIndex = 10
+Menu.Parent = ScreenGui
 
--- Текст координат
-local coordLabel = Instance.new("TextLabel")
-coordLabel.Size = UDim2.new(1, -20, 0, 30)
-coordLabel.Position = UDim2.new(0, 10, 0, 125)
-coordLabel.BackgroundTransparency = 1
-coordLabel.Text = "X: 0.00  Y: 0.00  Z: 0.00"
-coordLabel.TextColor3 = Color3.fromRGB(200, 255, 200)
-coordLabel.TextSize = 16
-coordLabel.Font = Enum.Font.Code
-coordLabel.Parent = mainFrame
+local MenuCorner = Instance.new("UICorner")
+MenuCorner.CornerRadius = UDim.new(0,10)
+MenuCorner.Parent = Menu
 
--- Функции полёта
-local function enableFly()
-    if not character or not rootPart then return end
-    humanoid.PlatformStand = true
-    humanoid.AutoRotate = false
-    if bodyVelocity then bodyVelocity:Destroy() end
-    if bodyGyro then bodyGyro:Destroy() end
-    bodyVelocity = Instance.new("BodyVelocity")
-    bodyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-    bodyVelocity.P = 1e5
-    bodyVelocity.Parent = rootPart
-    bodyGyro = Instance.new("BodyGyro")
-    bodyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-    bodyGyro.P = 1e5
-    bodyGyro.CFrame = rootPart.CFrame
-    bodyGyro.Parent = rootPart
+local MenuStroke = Instance.new("UIStroke")
+MenuStroke.Color = Color3.fromRGB(65,65,75)
+MenuStroke.Thickness = 1
+MenuStroke.Parent = Menu
+
+--==================================================
+-- TITLE
+--==================================================
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1,0,0,45)
+Title.BackgroundTransparency = 1
+Title.Text = "AIM SETTINGS"
+Title.TextColor3 = Color3.fromRGB(255,255,255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 20
+Title.ZIndex = 11
+Title.Parent = Menu
+
+--==================================================
+-- HELPERS
+--==================================================
+
+local function makeButton(text, y)
+	local button = Instance.new("TextButton")
+
+	button.Size = UDim2.new(1,-30,0,38)
+	button.Position = UDim2.new(0,15,0,y)
+
+	button.BackgroundColor3 = Color3.fromRGB(35,35,42)
+
+	button.Text = text
+	button.TextColor3 = Color3.fromRGB(255,255,255)
+
+	button.Font = Enum.Font.GothamMedium
+	button.TextSize = 14
+
+	button.BorderSizePixel = 0
+
+	button.ZIndex = 11
+	button.Parent = Menu
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0,7)
+	corner.Parent = button
+
+	return button
 end
 
-local function disableFly()
-    if bodyVelocity then bodyVelocity:Destroy() end
-    if bodyGyro then bodyGyro:Destroy() end
-    bodyVelocity = nil
-    bodyGyro = nil
-    humanoid.PlatformStand = false
-    humanoid.AutoRotate = true
+local function setToggleColor(button, enabled)
+	if enabled then
+		button.BackgroundColor3 = Color3.fromRGB(35,130,70)
+	else
+		button.BackgroundColor3 = Color3.fromRGB(120,40,40)
+	end
 end
 
--- Функции бега
-local function enableRun()
-    humanoid.WalkSpeed = runSpeed
+--==================================================
+-- BUTTONS
+--==================================================
+
+local AimToggle = makeButton("",55)
+local PistolToggle = makeButton("",100)
+local AWPToggle = makeButton("",145)
+local TargetButton = makeButton("",190)
+local BindButton = makeButton("",235)
+local FOVButton = makeButton("",280)
+local SmoothButton = makeButton("",325)
+local CircleButton = makeButton("",370)
+
+--==================================================
+-- REFRESH MENU
+--==================================================
+
+local function refreshMenu()
+
+	AimToggle.Text =
+		"AIM: " .. (Config.Enabled and "ON" or "OFF")
+
+	PistolToggle.Text =
+		"PISTOL AIM: " .. (Config.PistolEnabled and "ON" or "OFF")
+
+	AWPToggle.Text =
+		"AWP AIM: " .. (Config.AWPEnabled and "ON" or "OFF")
+
+	TargetButton.Text =
+		"TARGET: " .. string.upper(Config.AimPart)
+
+	BindButton.Text =
+		"BIND: " .. Config.AimKey.Name
+
+	FOVButton.Text =
+		"FOV: " .. tostring(Config.FOV)
+
+	SmoothButton.Text =
+		"SMOOTH: " .. string.format("%.2f",Config.Smoothness)
+
+	CircleButton.Text =
+		"FOV CIRCLE: " .. (Config.ShowFOV and "ON" or "OFF")
+
+	setToggleColor(AimToggle,Config.Enabled)
+	setToggleColor(PistolToggle,Config.PistolEnabled)
+	setToggleColor(AWPToggle,Config.AWPEnabled)
+	setToggleColor(CircleButton,Config.ShowFOV)
 end
 
-local function disableRun()
-    humanoid.WalkSpeed = defaultWalkSpeed
+refreshMenu()
+
+--==================================================
+-- BUTTON EVENTS
+--==================================================
+
+AimToggle.MouseButton1Click:Connect(function()
+
+	Config.Enabled = not Config.Enabled
+
+	if not Config.Enabled then
+		aiming = false
+		currentTarget = nil
+	end
+
+	refreshMenu()
+end)
+
+PistolToggle.MouseButton1Click:Connect(function()
+
+	Config.PistolEnabled =
+		not Config.PistolEnabled
+
+	refreshMenu()
+end)
+
+AWPToggle.MouseButton1Click:Connect(function()
+
+	Config.AWPEnabled =
+		not Config.AWPEnabled
+
+	refreshMenu()
+end)
+
+TargetButton.MouseButton1Click:Connect(function()
+
+	if Config.AimPart == "Head" then
+		Config.AimPart = "Body"
+	else
+		Config.AimPart = "Head"
+	end
+
+	refreshMenu()
+end)
+
+--==================================================
+-- BIND
+--==================================================
+
+BindButton.MouseButton1Click:Connect(function()
+
+	waitingForBind = true
+
+	BindButton.Text =
+		"PRESS ANY KEY..."
+
+end)
+
+--==================================================
+-- FOV
+-- LEFT CLICK +20
+-- RIGHT CLICK -20
+--==================================================
+
+FOVButton.MouseButton1Click:Connect(function()
+
+	Config.FOV += 20
+
+	if Config.FOV > 500 then
+		Config.FOV = 60
+	end
+
+	refreshMenu()
+end)
+
+FOVButton.MouseButton2Click:Connect(function()
+
+	Config.FOV -= 20
+
+	if Config.FOV < 40 then
+		Config.FOV = 40
+	end
+
+	refreshMenu()
+end)
+
+--==================================================
+-- SMOOTHNESS
+--==================================================
+
+SmoothButton.MouseButton1Click:Connect(function()
+
+	Config.Smoothness += 0.05
+
+	if Config.Smoothness > 0.5 then
+		Config.Smoothness = 0.05
+	end
+
+	refreshMenu()
+end)
+
+SmoothButton.MouseButton2Click:Connect(function()
+
+	Config.Smoothness -= 0.05
+
+	if Config.Smoothness < 0.05 then
+		Config.Smoothness = 0.05
+	end
+
+	refreshMenu()
+end)
+
+CircleButton.MouseButton1Click:Connect(function()
+
+	Config.ShowFOV =
+		not Config.ShowFOV
+
+	refreshMenu()
+end)
+
+--==================================================
+-- DRAG MENU
+--==================================================
+
+local dragging = false
+local dragStart
+local startPosition
+
+Title.InputBegan:Connect(function(input)
+
+	if input.UserInputType ==
+		Enum.UserInputType.MouseButton1 then
+
+		dragging = true
+
+		dragStart = input.Position
+		startPosition = Menu.Position
+	end
+
+end)
+
+UIS.InputChanged:Connect(function(input)
+
+	if dragging and
+		input.UserInputType ==
+		Enum.UserInputType.MouseMovement then
+
+		local delta =
+			input.Position - dragStart
+
+		Menu.Position =
+			UDim2.new(
+				startPosition.X.Scale,
+				startPosition.X.Offset + delta.X,
+
+				startPosition.Y.Scale,
+				startPosition.Y.Offset + delta.Y
+			)
+	end
+
+end)
+
+UIS.InputEnded:Connect(function(input)
+
+	if input.UserInputType ==
+		Enum.UserInputType.MouseButton1 then
+
+		dragging = false
+	end
+
+end)
+
+--==================================================
+-- CURRENT WEAPON
+--==================================================
+
+local function tableContains(tbl,name)
+
+	name = string.lower(name)
+
+	for _,v in ipairs(tbl) do
+
+		if string.lower(v) == name then
+			return true
+		end
+
+	end
+
+	return false
 end
 
--- Обработчики кнопок
-flyBtn.MouseButton1Click:Connect(function()
-    flyEnabled = not flyEnabled
-    flyBtn.Text = flyEnabled and "✈ ВЫКЛ" or "✈ ВКЛ"
-    flyBtn.BackgroundColor3 = flyEnabled and Color3.fromRGB(200, 0, 0) or Color3.fromRGB(60, 60, 80)
-    if flyEnabled then
-        if runEnabled then
-            runEnabled = false
-            disableRun()
-            runBtn.Text = "🏃 ВКЛ"
-            runBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-        end
-        enableFly()
-    else
-        disableFly()
-    end
-end)
+local function getCurrentWeapon()
 
-runBtn.MouseButton1Click:Connect(function()
-    runEnabled = not runEnabled
-    runBtn.Text = runEnabled and "🏃 ВЫКЛ" or "🏃 ВКЛ"
-    runBtn.BackgroundColor3 = runEnabled and Color3.fromRGB(200, 150, 0) or Color3.fromRGB(60, 60, 80)
-    if runEnabled then
-        if flyEnabled then
-            flyEnabled = false
-            disableFly()
-            flyBtn.Text = "✈ ВКЛ"
-            flyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-        end
-        enableRun()
-    else
-        disableRun()
-    end
-end)
+	local character =
+		LocalPlayer.Character
 
--- Обновление координат
-local function updateCoordDisplay()
-    if not rootPart then return end
-    local pos = rootPart.Position
-    coordLabel.Text = string.format("X: %.2f  Y: %.2f  Z: %.2f", pos.X, pos.Y, pos.Z)
+	if not character then
+		return nil
+	end
+
+	return character:FindFirstChildOfClass("Tool")
 end
 
--- Обновление движения полёта
-local function updateFly()
-    if not flyEnabled then return end
-    if not character or not rootPart then return end
-    local moveDirection = Vector3.new(0, 0, 0)
-    local camera = workspace.CurrentCamera
-    local forward = camera.CFrame.LookVector
-    local right = camera.CFrame.RightVector
-    local up = camera.CFrame.UpVector
-    local input = game:GetService("UserInputService")
-    if input:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + forward end
-    if input:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - forward end
-    if input:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - right end
-    if input:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + right end
-    if input:IsKeyDown(Enum.KeyCode.Space) then moveDirection = moveDirection + up end
-    if input:IsKeyDown(Enum.KeyCode.LeftShift) then moveDirection = moveDirection - up end
-    if moveDirection.Magnitude > 0 then
-        moveDirection = moveDirection.Unit * flySpeed
-    else
-        moveDirection = Vector3.new(0, 0, 0)
-    end
-    bodyVelocity.Velocity = moveDirection
-    if moveDirection.Magnitude > 0.1 then
-        bodyGyro.CFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + moveDirection)
-    end
+local function weaponAllowed()
+
+	local tool = getCurrentWeapon()
+
+	if not tool then
+		return false
+	end
+
+	if tableContains(
+		PISTOL_NAMES,
+		tool.Name
+	) then
+
+		return Config.PistolEnabled
+	end
+
+	if tableContains(
+		AWP_NAMES,
+		tool.Name
+	) then
+
+		return Config.AWPEnabled
+	end
+
+	return false
 end
 
--- Главный цикл
-local connection = game:GetService("RunService").Heartbeat:Connect(function()
-    updateCoordDisplay()
-    updateFly()
+--==================================================
+-- TARGET PART
+--==================================================
+
+local function getAimPart(character)
+
+	if Config.AimPart == "Head" then
+
+		return character:FindFirstChild("Head")
+
+	else
+
+		return
+			character:FindFirstChild("UpperTorso")
+			or character:FindFirstChild("Torso")
+			or character:FindFirstChild("HumanoidRootPart")
+
+	end
+end
+
+--==================================================
+-- VALID PLAYER
+--==================================================
+
+local function validTarget(player)
+
+	if player == LocalPlayer then
+		return false
+	end
+
+	if Config.TeamCheck then
+
+		if LocalPlayer.Team and
+			player.Team == LocalPlayer.Team then
+
+			return false
+
+		end
+	end
+
+	local character = player.Character
+
+	if not character then
+		return false
+	end
+
+	local humanoid =
+		character:FindFirstChildOfClass("Humanoid")
+
+	if not humanoid then
+		return false
+	end
+
+	if humanoid.Health <= 0 then
+		return false
+	end
+
+	if not getAimPart(character) then
+		return false
+	end
+
+	return true
+end
+
+--==================================================
+-- WALL CHECK
+--==================================================
+
+local function visible(character,targetPart)
+
+	if not Config.WallCheck then
+		return true
+	end
+
+	local params =
+		RaycastParams.new()
+
+	params.FilterType =
+		Enum.RaycastFilterType.Exclude
+
+	if LocalPlayer.Character then
+
+		params.FilterDescendantsInstances =
+			{LocalPlayer.Character}
+
+	end
+
+	local origin =
+		Camera.CFrame.Position
+
+	local direction =
+		targetPart.Position - origin
+
+	local result =
+		workspace:Raycast(
+			origin,
+			direction,
+			params
+		)
+
+	if not result then
+		return true
+	end
+
+	return
+		result.Instance:IsDescendantOf(character)
+
+end
+
+--==================================================
+-- CLOSEST TARGET
+--==================================================
+
+local function getClosestTarget()
+
+	local viewport =
+		Camera.ViewportSize
+
+	local center =
+		Vector2.new(
+			viewport.X / 2,
+			viewport.Y / 2
+		)
+
+	local closestPlayer = nil
+	local closestDistance = Config.FOV
+
+	for _,player in ipairs(
+		Players:GetPlayers()
+	) do
+
+		if validTarget(player) then
+
+			local character =
+				player.Character
+
+			local targetPart =
+				getAimPart(character)
+
+			local worldDistance =
+				(
+					targetPart.Position -
+					Camera.CFrame.Position
+				).Magnitude
+
+			if worldDistance <=
+				Config.MaxDistance then
+
+				local screenPosition,onScreen =
+					Camera:WorldToViewportPoint(
+						targetPart.Position
+					)
+
+				if onScreen then
+
+					local position =
+						Vector2.new(
+							screenPosition.X,
+							screenPosition.Y
+						)
+
+					local distance =
+						(position-center).Magnitude
+
+					if distance <
+						closestDistance then
+
+						if visible(
+							character,
+							targetPart
+						) then
+
+							closestDistance =
+								distance
+
+							closestPlayer =
+								player
+
+						end
+
+					end
+				end
+			end
+		end
+	end
+
+	return closestPlayer
+end
+
+--==================================================
+-- INPUT
+--==================================================
+
+UIS.InputBegan:Connect(function(input,processed)
+
+	if waitingForBind then
+
+		if input.UserInputType ==
+			Enum.UserInputType.Keyboard then
+
+			Config.AimKey =
+				input.KeyCode
+
+			waitingForBind = false
+
+			refreshMenu()
+
+		end
+
+		return
+	end
+
+	if processed then
+		return
+	end
+
+	if input.KeyCode ==
+		Config.AimKey then
+
+		if not Config.Enabled then
+			return
+		end
+
+		if not weaponAllowed() then
+			return
+		end
+
+		aiming = true
+
+		currentTarget =
+			getClosestTarget()
+
+	end
 end)
 
--- Обработка респавна
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    rootPart = character:WaitForChild("HumanoidRootPart")
-    humanoid = character:WaitForChild("Humanoid")
-    if flyEnabled then
-        disableFly()
-        flyEnabled = false
-        flyBtn.Text = "✈ ВКЛ"
-        flyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-    end
-    if runEnabled then
-        disableRun()
-        runEnabled = false
-        runBtn.Text = "🏃 ВКЛ"
-        runBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-    end
+UIS.InputEnded:Connect(function(input)
+
+	if input.KeyCode ==
+		Config.AimKey then
+
+		aiming = false
+		currentTarget = nil
+
+	end
 end)
 
--- Отключение при закрытии GUI
-pcall(function()
-    screenGui.AncestryChanged:Connect(function()
-        if not screenGui.Parent then
-            if flyEnabled then disableFly() end
-            if runEnabled then disableRun() end
-            connection:Disconnect()
-        end
-    end)
-end)
+--==================================================
+-- MAIN LOOP
+--==================================================
 
-print("✅ Fly + Sprint + Coord скрипт загружен!")
-print("Полёт: WASD + Пробел/Shift, скорость регулируется.")
-print("Бег: вкл/выкл, скорость до 300.")
-print("Координаты обновляются в меню.")
+RunService.RenderStepped:Connect(function()
+
+	--------------------------------
+	-- FOV CIRCLE
+	--------------------------------
+
+	local viewport =
+		Camera.ViewportSize
+
+	FOVCircle.Position =
+		UDim2.fromOffset(
+			viewport.X / 2,
+			viewport.Y / 2
+		)
+
+	FOVCircle.Size =
+		UDim2.fromOffset(
+			Config.FOV * 2,
+			Config.FOV * 2
+		)
+
+	FOVCircle.Visible =
+		Config.ShowFOV
+		and Config.Enabled
+
+	--------------------------------
+	-- AIM
+	--------------------------------
+
+	if not aiming then
+		return
+	end
+
+	if not Config.Enabled then
+		return
+	end
+
+	if not weaponAllowed() then
+
+		aiming = false
+		currentTarget = nil
+
+		return
+	end
+
+	if not currentTarget or
+		not validTarget(currentTarget) then
+
+		currentTarget =
+			getClosestTarget()
+
+	end
+
+	if not currentTarget then
+		return
+	end
+
+	local character =
+		currentTarget.Character
+
+	local targetPart =
+		getAimPart(character)
+
+	if not targetPart then
+
+		currentTarget = nil
+		return
+
+	end
+
+	if not visible(
+		character,
+		targetPart
+	) then
+
+		currentTarget =
+			getClosestTarget()
+
+		return
+	end
+
+	local cameraPosition =
+		Camera.CFrame.Position
+
+	local desired =
+		CFrame.lookAt(
+			cameraPosition,
+			targetPart.Position
+		)
+
+	Camera.CFrame =
+		Camera.CFrame:Lerp(
+			desired,
+			Config.Smoothness
+		)
+
+end)
