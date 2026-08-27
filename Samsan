@@ -30,8 +30,8 @@ local SellSlimeAction = remotes:WaitForChild("SellSlimeAction")
 
 local EVENT_ID = "SATURN_LUCK_3X_RAINBOW_FOUR_LEAF_CLOVER_MILLIONAIRE"
 
-local AUTO_EVENT = true
-local AUTO_SELL = true
+local AUTO_EVENT = false
+local AUTO_SELL = false
 
 local KEEP_PURCHASED = true
 local KEEP_VIP = true
@@ -585,6 +585,7 @@ for _, name in ipairs({
     "Arc2playAutoManager",
     "Arc2playAutoManagerV2",
     "Arc2playAutoManagerV3",
+    "Arc2playAutoManagerV5",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -593,13 +594,13 @@ for _, name in ipairs({
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "Arc2playAutoManagerV3"
+gui.Name = "Arc2playAutoManagerV5"
 gui.ResetOnSpawn = false
 gui.Parent = guiParent
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(455, 445)
-frame.Position = UDim2.new(0, 20, 0.5, -222)
+frame.Size = UDim2.fromOffset(455, 494)
+frame.Position = UDim2.new(0, 20, 0.5, -247)
 frame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -615,7 +616,7 @@ title.BackgroundTransparency = 1
 title.Position = UDim2.fromOffset(14, 8)
 title.Size = UDim2.new(1, -28, 0, 30)
 title.Font = Enum.Font.GothamBold
-title.Text = "MEGA RAMP FOR SLIME • AUTO V3"
+title.Text = "MEGA RAMP FOR SLIME • AUTO V5"
 title.TextSize = 15
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -709,9 +710,23 @@ makeToggle(sellRow, AUTO_SELL, function(v)
     end
 end)
 
+-- NEW: VIP protection switch.
+-- ВКЛ = любой VIP-слайм защищён от продажи.
+-- ВЫКЛ = VIP продаётся/остаётся строго по галочкам редкости.
+local vipRow = makeRow(142, "Всегда оставлять VIP-слаймов")
+makeToggle(vipRow, KEEP_VIP, function(v)
+    KEEP_VIP = v
+
+    if v then
+        setSellStatus("VIP-защита ВКЛ: VIP не продаём")
+    else
+        setSellStatus("VIP-защита ВЫКЛ: VIP по редкости")
+    end
+end)
+
 local keepTitle = Instance.new("TextLabel")
 keepTitle.BackgroundTransparency = 1
-keepTitle.Position = UDim2.fromOffset(16, 143)
+keepTitle.Position = UDim2.fromOffset(16, 192)
 keepTitle.Size = UDim2.new(1, -32, 0, 25)
 keepTitle.Font = Enum.Font.GothamBold
 keepTitle.Text = "ЧТО ОСТАВЛЯТЬ  •  ✓ = оставить, пусто = продать"
@@ -721,7 +736,7 @@ keepTitle.TextXAlignment = Enum.TextXAlignment.Left
 keepTitle.Parent = frame
 
 local grid = Instance.new("Frame")
-grid.Position = UDim2.fromOffset(12, 170)
+grid.Position = UDim2.fromOffset(12, 219)
 grid.Size = UDim2.new(1, -24, 0, 132)
 grid.BackgroundTransparency = 1
 grid.Parent = frame
@@ -778,13 +793,13 @@ for order, info in ipairs(rarityList) do
     end)
 end
 
-local eventStatusRow = makeRow(309, "", 35)
+local eventStatusRow = makeRow(358, "", 35)
 eventStatusLabel = eventStatusRow:FindFirstChildOfClass("TextLabel")
 eventStatusLabel.Size = UDim2.new(1, -20, 1, 0)
 eventStatusLabel.TextColor3 = Color3.fromRGB(255, 210, 90)
 eventStatusLabel.Text = statusEventText
 
-local sellStatusRow = makeRow(350, "", 35)
+local sellStatusRow = makeRow(399, "", 35)
 sellStatusLabel = sellStatusRow:FindFirstChildOfClass("TextLabel")
 sellStatusLabel.Size = UDim2.new(1, -20, 1, 0)
 sellStatusLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
@@ -792,7 +807,7 @@ sellStatusLabel.Text = statusSellText
 
 local buyNow = Instance.new("TextButton")
 buyNow.Size = UDim2.fromOffset(205, 38)
-buyNow.Position = UDim2.fromOffset(12, 395)
+buyNow.Position = UDim2.fromOffset(12, 444)
 buyNow.BackgroundColor3 = Color3.fromRGB(40, 160, 75)
 buyNow.BorderSizePixel = 0
 buyNow.Font = Enum.Font.GothamBold
@@ -814,7 +829,7 @@ end)
 
 local sellNow = Instance.new("TextButton")
 sellNow.Size = UDim2.fromOffset(205, 38)
-sellNow.Position = UDim2.fromOffset(238, 395)
+sellNow.Position = UDim2.fromOffset(238, 444)
 sellNow.BackgroundColor3 = Color3.fromRGB(185, 65, 65)
 sellNow.BorderSizePixel = 0
 sellNow.Font = Enum.Font.GothamBold
@@ -831,7 +846,8 @@ sellNow.MouseButton1Click:Connect(function()
     task.spawn(autoSellNow)
 end)
 
-log("Loaded V3.")
+log("Loaded V5.")
 log("Event:", EVENT_ID)
 log("AutoEvent:", AUTO_EVENT, "AutoSell:", AUTO_SELL)
+log("VIP protection:", KEEP_VIP)
 log("Checked rarities to keep:", keptRarityCount())
