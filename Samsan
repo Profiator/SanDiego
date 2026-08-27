@@ -1,799 +1,1971 @@
---==================================================
--- AIM ASSIST SYSTEM + MENU
--- StarterPlayer > StarterPlayerScripts > LocalScript
---==================================================
+--============================================================
+--                    СИСТЕМА АВТОНАВЕДЕНИЯ
+--============================================================
+--
+-- Куда поставить:
+-- StarterPlayer
+--   └─ StarterPlayerScripts
+--       └─ LocalScript
+--
+-- Как работает:
+--
+-- 1. Зажимаем назначенную кнопку.
+-- 2. Скрипт ищет ближайшего противника ВНУТРИ круга.
+-- 3. Наводится на голову или тело.
+-- 4. После захвата НЕ ОТПУСКАЕТ цель,
+--    даже если она вышла за пределы круга.
+-- 5. Цель отпускается только:
+--      - когда отпущена кнопка;
+--      - когда цель умерла;
+--      - когда цель исчезла;
+--      - когда AIM выключен.
+--
+--============================================================
+
+
+--============================================================
+-- СЕРВИСЫ ROBLOX
+--============================================================
 
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
+local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
-local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
 
---==================================================
--- CONFIG
---==================================================
+--============================================================
+-- ОСНОВНЫЕ ОБЪЕКТЫ
+--============================================================
 
-local Config = {
-	Enabled = true,
+local ЛокальныйИгрок = Players.LocalPlayer
+local Камера = workspace.CurrentCamera
 
-	-- оружие
-	PistolEnabled = true,
-	AWPEnabled = true,
 
-	-- Head / Body
-	AimPart = "Head",
+--============================================================
+-- НАСТРОЙКИ
+--============================================================
 
-	-- Кнопка AIM
-	AimKey = Enum.KeyCode.Q,
+local Настройки = {
 
-	-- Размер круга
-	FOV = 180,
+	-- Главный переключатель
+	AimВключен = true,
+
+	-- Разрешение для оружия
+	ПистолетВключен = true,
+	AWPВключен = true,
+
+	-- Куда наводиться:
+	-- "ГОЛОВА"
+	-- "ТЕЛО"
+	Цель = "ГОЛОВА",
+
+	-- Радиус круга в пикселях
+	Радиус = 170,
 
 	-- Плавность
-	-- больше = быстрее
-	Smoothness = 0.15,
+	--
+	-- 1.00 = почти мгновенно
+	-- 0.50 = быстро
+	-- 0.20 = нормально
+	-- 0.10 = плавно
+	-- 0.05 = очень плавно
+	Плавность = 0.22,
 
-	-- проверки
-	TeamCheck = true,
-	WallCheck = true,
+	-- Максимальная дистанция
+	МаксимальнаяДистанция = 5000,
 
-	MaxDistance = 3000,
+	-- Показывать круг
+	ПоказыватьКруг = true,
 
-	ShowFOV = true
+	-- Проверять стены при ПЕРВИЧНОМ поиске цели.
+	--
+	-- ВАЖНО:
+	-- После того как цель уже захвачена,
+	-- она не отпускается.
+	ПроверятьСтены = false,
+
+	-- Если в игре команды не используются,
+	-- лучше оставить false.
+	ПроверятьКоманду = false,
 }
 
--- Названия оружия в твоей игре
-local PISTOL_NAMES = {
-	"Pistol",
-	"Glock",
-	"USP",
-	"Deagle",
-	"Desert Eagle"
+
+--============================================================
+-- БИНД
+--============================================================
+--
+-- По умолчанию AIM работает на Q.
+--
+-- Через меню можно назначить:
+-- клавишу клавиатуры;
+-- левую кнопку мыши;
+-- правую кнопку мыши;
+-- среднюю кнопку мыши.
+--
+--============================================================
+
+local БиндКлавиатуры = Enum.KeyCode.Q
+local БиндМыши = nil
+
+
+--============================================================
+-- НАЗВАНИЯ ОРУЖИЯ
+--============================================================
+--
+-- Если оружие является обычным Tool,
+-- скрипт попробует определить его тип.
+--
+-- Если оружие в твоей игре НЕ Tool,
+-- AIM всё равно будет работать.
+--
+--============================================================
+
+local НазванияПистолетов = {
+	"pistol",
+	"glock",
+	"usp",
+	"deagle",
+	"desert eagle",
+	"revolver",
+	"пистолет",
 }
 
-local AWP_NAMES = {
-	"AWP",
-	"Sniper",
-	"Sniper Rifle"
+local НазванияAWP = {
+	"awp",
+	"sniper",
+	"sniper rifle",
+	"снайпер",
 }
 
---==================================================
--- VARIABLES
---==================================================
 
-local aiming = false
-local waitingForBind = false
-local currentTarget = nil
+--============================================================
+-- СОСТОЯНИЕ
+--============================================================
 
---==================================================
--- GUI
---==================================================
+local КнопкаЗажата = false
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AimSystemGUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local ТекущаяЦель = nil
 
---==================================================
--- FOV CIRCLE
---==================================================
+local ОжиданиеБинда = false
 
-local FOVCircle = Instance.new("Frame")
-FOVCircle.Name = "FOVCircle"
-FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-FOVCircle.BackgroundTransparency = 1
-FOVCircle.ZIndex = 1
-FOVCircle.Parent = ScreenGui
+local МенюОткрыто = true
 
-local CircleCorner = Instance.new("UICorner")
-CircleCorner.CornerRadius = UDim.new(1, 0)
-CircleCorner.Parent = FOVCircle
 
-local CircleStroke = Instance.new("UIStroke")
-CircleStroke.Thickness = 1.5
-CircleStroke.Transparency = 0.15
-CircleStroke.Color = Color3.fromRGB(255,255,255)
-CircleStroke.Parent = FOVCircle
+--============================================================
+-- СОЗДАНИЕ ИНТЕРФЕЙСА
+--============================================================
 
---==================================================
--- MENU
---==================================================
+local Интерфейс = Instance.new("ScreenGui")
 
-local Menu = Instance.new("Frame")
-Menu.Name = "AimMenu"
-Menu.Size = UDim2.fromOffset(320, 410)
-Menu.Position = UDim2.new(0, 30, 0.5, -205)
-Menu.BackgroundColor3 = Color3.fromRGB(20,20,24)
-Menu.BorderSizePixel = 0
-Menu.ZIndex = 10
-Menu.Parent = ScreenGui
+Интерфейс.Name = "РусскоеМенюAim"
 
-local MenuCorner = Instance.new("UICorner")
-MenuCorner.CornerRadius = UDim.new(0,10)
-MenuCorner.Parent = Menu
+Интерфейс.ResetOnSpawn = false
 
-local MenuStroke = Instance.new("UIStroke")
-MenuStroke.Color = Color3.fromRGB(65,65,75)
-MenuStroke.Thickness = 1
-MenuStroke.Parent = Menu
+Интерфейс.IgnoreGuiInset = true
 
---==================================================
--- TITLE
---==================================================
+Интерфейс.DisplayOrder = 999
 
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1,0,0,45)
-Title.BackgroundTransparency = 1
-Title.Text = "AIM SETTINGS"
-Title.TextColor3 = Color3.fromRGB(255,255,255)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 20
-Title.ZIndex = 11
-Title.Parent = Menu
+Интерфейс.Parent =
+	ЛокальныйИгрок:WaitForChild("PlayerGui")
 
---==================================================
--- HELPERS
---==================================================
 
-local function makeButton(text, y)
-	local button = Instance.new("TextButton")
+--============================================================
+-- КРУГ ЗОНЫ AIM
+--============================================================
 
-	button.Size = UDim2.new(1,-30,0,38)
-	button.Position = UDim2.new(0,15,0,y)
+local Круг = Instance.new("Frame")
 
-	button.BackgroundColor3 = Color3.fromRGB(35,35,42)
+Круг.Name = "КругЗахвата"
 
-	button.Text = text
-	button.TextColor3 = Color3.fromRGB(255,255,255)
+Круг.AnchorPoint =
+	Vector2.new(0.5, 0.5)
 
-	button.Font = Enum.Font.GothamMedium
-	button.TextSize = 14
+Круг.BackgroundTransparency = 1
 
-	button.BorderSizePixel = 0
+Круг.BorderSizePixel = 0
 
-	button.ZIndex = 11
-	button.Parent = Menu
+Круг.ZIndex = 2
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0,7)
-	corner.Parent = button
+Круг.Parent = Интерфейс
 
-	return button
+
+local СкруглениеКруга =
+	Instance.new("UICorner")
+
+СкруглениеКруга.CornerRadius =
+	UDim.new(1, 0)
+
+СкруглениеКруга.Parent =
+	Круг
+
+
+local ОбводкаКруга =
+	Instance.new("UIStroke")
+
+ОбводкаКруга.Thickness = 2
+
+ОбводкаКруга.Transparency = 0.15
+
+ОбводкаКруга.Color =
+	Color3.fromRGB(255, 255, 255)
+
+ОбводкаКруга.Parent =
+	Круг
+
+
+--============================================================
+-- ГЛАВНОЕ МЕНЮ
+--============================================================
+
+local Меню = Instance.new("Frame")
+
+Меню.Name = "Меню"
+
+Меню.Size =
+	UDim2.fromOffset(340, 520)
+
+Меню.Position =
+	UDim2.new(
+		0,
+		25,
+		0.5,
+		-260
+	)
+
+Меню.BackgroundColor3 =
+	Color3.fromRGB(19, 20, 25)
+
+Меню.BorderSizePixel = 0
+
+Меню.ZIndex = 20
+
+Меню.Parent =
+	Интерфейс
+
+
+local СкруглениеМеню =
+	Instance.new("UICorner")
+
+СкруглениеМеню.CornerRadius =
+	UDim.new(0, 10)
+
+СкруглениеМеню.Parent =
+	Меню
+
+
+local ОбводкаМеню =
+	Instance.new("UIStroke")
+
+ОбводкаМеню.Color =
+	Color3.fromRGB(70, 72, 85)
+
+ОбводкаМеню.Thickness = 1
+
+ОбводкаМеню.Parent =
+	Меню
+
+
+--============================================================
+-- ЗАГОЛОВОК
+--============================================================
+
+local Заголовок =
+	Instance.new("TextLabel")
+
+Заголовок.Size =
+	UDim2.new(
+		1,
+		0,
+		0,
+		42
+	)
+
+Заголовок.BackgroundTransparency = 1
+
+Заголовок.Text =
+	"НАСТРОЙКИ AIM"
+
+Заголовок.TextColor3 =
+	Color3.fromRGB(255, 255, 255)
+
+Заголовок.Font =
+	Enum.Font.GothamBold
+
+Заголовок.TextSize = 19
+
+Заголовок.Active = true
+
+Заголовок.ZIndex = 21
+
+Заголовок.Parent =
+	Меню
+
+
+--============================================================
+-- СТАТУС
+--============================================================
+
+local Статус =
+	Instance.new("TextLabel")
+
+Статус.Size =
+	UDim2.new(
+		1,
+		-30,
+		0,
+		28
+	)
+
+Статус.Position =
+	UDim2.fromOffset(
+		15,
+		40
+	)
+
+Статус.BackgroundTransparency = 1
+
+Статус.Text =
+	"СТАТУС: ОЖИДАНИЕ"
+
+Статус.TextColor3 =
+	Color3.fromRGB(180, 185, 195)
+
+Статус.Font =
+	Enum.Font.Gotham
+
+Статус.TextSize = 13
+
+Статус.TextXAlignment =
+	Enum.TextXAlignment.Left
+
+Статус.ZIndex = 21
+
+Статус.Parent =
+	Меню
+
+
+--============================================================
+-- ФУНКЦИЯ СОЗДАНИЯ КНОПОК
+--============================================================
+
+local function СоздатьКнопку(
+	Текст,
+	Высота
+)
+
+	local Кнопка =
+		Instance.new("TextButton")
+
+	Кнопка.Size =
+		UDim2.new(
+			1,
+			-30,
+			0,
+			38
+		)
+
+	Кнопка.Position =
+		UDim2.fromOffset(
+			15,
+			Высота
+		)
+
+	Кнопка.BackgroundColor3 =
+		Color3.fromRGB(
+			35,
+			36,
+			44
+		)
+
+	Кнопка.BorderSizePixel = 0
+
+	Кнопка.Text = Текст
+
+	Кнопка.TextColor3 =
+		Color3.fromRGB(
+			255,
+			255,
+			255
+		)
+
+	Кнопка.Font =
+		Enum.Font.GothamMedium
+
+	Кнопка.TextSize = 14
+
+	Кнопка.AutoButtonColor = true
+
+	Кнопка.ZIndex = 21
+
+	Кнопка.Parent =
+		Меню
+
+
+	local Скругление =
+		Instance.new("UICorner")
+
+	Скругление.CornerRadius =
+		UDim.new(0, 7)
+
+	Скругление.Parent =
+		Кнопка
+
+
+	return Кнопка
 end
 
-local function setToggleColor(button, enabled)
-	if enabled then
-		button.BackgroundColor3 = Color3.fromRGB(35,130,70)
-	else
-		button.BackgroundColor3 = Color3.fromRGB(120,40,40)
-	end
-end
 
---==================================================
--- BUTTONS
---==================================================
+--============================================================
+-- КНОПКИ
+--============================================================
 
-local AimToggle = makeButton("",55)
-local PistolToggle = makeButton("",100)
-local AWPToggle = makeButton("",145)
-local TargetButton = makeButton("",190)
-local BindButton = makeButton("",235)
-local FOVButton = makeButton("",280)
-local SmoothButton = makeButton("",325)
-local CircleButton = makeButton("",370)
+local КнопкаAim =
+	СоздатьКнопку(
+		"",
+		75
+	)
 
---==================================================
--- REFRESH MENU
---==================================================
 
-local function refreshMenu()
+local КнопкаПистолет =
+	СоздатьКнопку(
+		"",
+		120
+	)
 
-	AimToggle.Text =
-		"AIM: " .. (Config.Enabled and "ON" or "OFF")
 
-	PistolToggle.Text =
-		"PISTOL AIM: " .. (Config.PistolEnabled and "ON" or "OFF")
+local КнопкаAWP =
+	СоздатьКнопку(
+		"",
+		165
+	)
 
-	AWPToggle.Text =
-		"AWP AIM: " .. (Config.AWPEnabled and "ON" or "OFF")
 
-	TargetButton.Text =
-		"TARGET: " .. string.upper(Config.AimPart)
+local КнопкаЦели =
+	СоздатьКнопку(
+		"",
+		210
+	)
 
-	BindButton.Text =
-		"BIND: " .. Config.AimKey.Name
 
-	FOVButton.Text =
-		"FOV: " .. tostring(Config.FOV)
+local КнопкаБинда =
+	СоздатьКнопку(
+		"",
+		255
+	)
 
-	SmoothButton.Text =
-		"SMOOTH: " .. string.format("%.2f",Config.Smoothness)
 
-	CircleButton.Text =
-		"FOV CIRCLE: " .. (Config.ShowFOV and "ON" or "OFF")
+local КнопкаРадиуса =
+	СоздатьКнопку(
+		"",
+		300
+	)
 
-	setToggleColor(AimToggle,Config.Enabled)
-	setToggleColor(PistolToggle,Config.PistolEnabled)
-	setToggleColor(AWPToggle,Config.AWPEnabled)
-	setToggleColor(CircleButton,Config.ShowFOV)
-end
 
-refreshMenu()
+local КнопкаПлавности =
+	СоздатьКнопку(
+		"",
+		345
+	)
 
---==================================================
--- BUTTON EVENTS
---==================================================
 
-AimToggle.MouseButton1Click:Connect(function()
+local КнопкаКруга =
+	СоздатьКнопку(
+		"",
+		390
+	)
 
-	Config.Enabled = not Config.Enabled
 
-	if not Config.Enabled then
-		aiming = false
-		currentTarget = nil
-	end
+local КнопкаСтен =
+	СоздатьКнопку(
+		"",
+		435
+	)
 
-	refreshMenu()
-end)
 
-PistolToggle.MouseButton1Click:Connect(function()
+local КнопкаКоманды =
+	СоздатьКнопку(
+		"",
+		480
+	)
 
-	Config.PistolEnabled =
-		not Config.PistolEnabled
 
-	refreshMenu()
-end)
+--============================================================
+-- ЦВЕТ ПЕРЕКЛЮЧАТЕЛЕЙ
+--============================================================
 
-AWPToggle.MouseButton1Click:Connect(function()
+local function УстановитьЦвет(
+	Кнопка,
+	Включено
+)
 
-	Config.AWPEnabled =
-		not Config.AWPEnabled
+	if Включено then
 
-	refreshMenu()
-end)
-
-TargetButton.MouseButton1Click:Connect(function()
-
-	if Config.AimPart == "Head" then
-		Config.AimPart = "Body"
-	else
-		Config.AimPart = "Head"
-	end
-
-	refreshMenu()
-end)
-
---==================================================
--- BIND
---==================================================
-
-BindButton.MouseButton1Click:Connect(function()
-
-	waitingForBind = true
-
-	BindButton.Text =
-		"PRESS ANY KEY..."
-
-end)
-
---==================================================
--- FOV
--- LEFT CLICK +20
--- RIGHT CLICK -20
---==================================================
-
-FOVButton.MouseButton1Click:Connect(function()
-
-	Config.FOV += 20
-
-	if Config.FOV > 500 then
-		Config.FOV = 60
-	end
-
-	refreshMenu()
-end)
-
-FOVButton.MouseButton2Click:Connect(function()
-
-	Config.FOV -= 20
-
-	if Config.FOV < 40 then
-		Config.FOV = 40
-	end
-
-	refreshMenu()
-end)
-
---==================================================
--- SMOOTHNESS
---==================================================
-
-SmoothButton.MouseButton1Click:Connect(function()
-
-	Config.Smoothness += 0.05
-
-	if Config.Smoothness > 0.5 then
-		Config.Smoothness = 0.05
-	end
-
-	refreshMenu()
-end)
-
-SmoothButton.MouseButton2Click:Connect(function()
-
-	Config.Smoothness -= 0.05
-
-	if Config.Smoothness < 0.05 then
-		Config.Smoothness = 0.05
-	end
-
-	refreshMenu()
-end)
-
-CircleButton.MouseButton1Click:Connect(function()
-
-	Config.ShowFOV =
-		not Config.ShowFOV
-
-	refreshMenu()
-end)
-
---==================================================
--- DRAG MENU
---==================================================
-
-local dragging = false
-local dragStart
-local startPosition
-
-Title.InputBegan:Connect(function(input)
-
-	if input.UserInputType ==
-		Enum.UserInputType.MouseButton1 then
-
-		dragging = true
-
-		dragStart = input.Position
-		startPosition = Menu.Position
-	end
-
-end)
-
-UIS.InputChanged:Connect(function(input)
-
-	if dragging and
-		input.UserInputType ==
-		Enum.UserInputType.MouseMovement then
-
-		local delta =
-			input.Position - dragStart
-
-		Menu.Position =
-			UDim2.new(
-				startPosition.X.Scale,
-				startPosition.X.Offset + delta.X,
-
-				startPosition.Y.Scale,
-				startPosition.Y.Offset + delta.Y
+		Кнопка.BackgroundColor3 =
+			Color3.fromRGB(
+				32,
+				120,
+				67
 			)
+
+	else
+
+		Кнопка.BackgroundColor3 =
+			Color3.fromRGB(
+				115,
+				42,
+				48
+			)
+
 	end
+end
 
-end)
 
-UIS.InputEnded:Connect(function(input)
+--============================================================
+-- НАЗВАНИЕ ТЕКУЩЕГО БИНДА
+--============================================================
 
-	if input.UserInputType ==
+local function ПолучитьНазваниеБинда()
+
+	if БиндМыши ==
 		Enum.UserInputType.MouseButton1 then
 
-		dragging = false
+		return "ЛКМ"
+
 	end
 
-end)
 
---==================================================
--- CURRENT WEAPON
---==================================================
+	if БиндМыши ==
+		Enum.UserInputType.MouseButton2 then
 
-local function tableContains(tbl,name)
+		return "ПКМ"
 
-	name = string.lower(name)
+	end
 
-	for _,v in ipairs(tbl) do
 
-		if string.lower(v) == name then
-			return true
+	if БиндМыши ==
+		Enum.UserInputType.MouseButton3 then
+
+		return "СКМ"
+
+	end
+
+
+	if БиндКлавиатуры then
+
+		return БиндКлавиатуры.Name
+
+	end
+
+
+	return "НЕ НАЗНАЧЕН"
+end
+
+
+--============================================================
+-- ОБНОВЛЕНИЕ ТЕКСТА МЕНЮ
+--============================================================
+
+local function ОбновитьМеню()
+
+	КнопкаAim.Text =
+		"AIM: "
+		..
+		(
+			Настройки.AimВключен
+			and "ВКЛ"
+			or "ВЫКЛ"
+		)
+
+
+	КнопкаПистолет.Text =
+		"ПИСТОЛЕТ: "
+		..
+		(
+			Настройки.ПистолетВключен
+			and "ВКЛ"
+			or "ВЫКЛ"
+		)
+
+
+	КнопкаAWP.Text =
+		"AWP: "
+		..
+		(
+			Настройки.AWPВключен
+			and "ВКЛ"
+			or "ВЫКЛ"
+		)
+
+
+	КнопкаЦели.Text =
+		"НАВОДИТЬСЯ: "
+		..
+		Настройки.Цель
+
+
+	if ОжиданиеБинда then
+
+		КнопкаБинда.Text =
+			"НАЖМИ НУЖНУЮ КНОПКУ..."
+
+	else
+
+		КнопкаБинда.Text =
+			"БИНД AIM: "
+			..
+			ПолучитьНазваниеБинда()
+
+	end
+
+
+	КнопкаРадиуса.Text =
+		"РАДИУС: "
+		..
+		tostring(
+			Настройки.Радиус
+		)
+		..
+		"  |  ЛКМ +20 / ПКМ -20"
+
+
+	КнопкаПлавности.Text =
+		"ПЛАВНОСТЬ: "
+		..
+		string.format(
+			"%.2f",
+			Настройки.Плавность
+		)
+		..
+		"  |  ЛКМ + / ПКМ -"
+
+
+	КнопкаКруга.Text =
+		"КРУГ: "
+		..
+		(
+			Настройки.ПоказыватьКруг
+			and "ВКЛ"
+			or "ВЫКЛ"
+		)
+
+
+	КнопкаСтен.Text =
+		"ПРОВЕРКА СТЕН: "
+		..
+		(
+			Настройки.ПроверятьСтены
+			and "ВКЛ"
+			or "ВЫКЛ"
+		)
+
+
+	КнопкаКоманды.Text =
+		"ПРОВЕРКА КОМАНДЫ: "
+		..
+		(
+			Настройки.ПроверятьКоманду
+			and "ВКЛ"
+			or "ВЫКЛ"
+		)
+
+
+	УстановитьЦвет(
+		КнопкаAim,
+		Настройки.AimВключен
+	)
+
+	УстановитьЦвет(
+		КнопкаПистолет,
+		Настройки.ПистолетВключен
+	)
+
+	УстановитьЦвет(
+		КнопкаAWP,
+		Настройки.AWPВключен
+	)
+
+	УстановитьЦвет(
+		КнопкаКруга,
+		Настройки.ПоказыватьКруг
+	)
+
+	УстановитьЦвет(
+		КнопкаСтен,
+		Настройки.ПроверятьСтены
+	)
+
+	УстановитьЦвет(
+		КнопкаКоманды,
+		not Настройки.ПроверятьКоманду
+	)
+
+end
+
+
+ОбновитьМеню()
+
+
+--============================================================
+-- ОБРАБОТКА КНОПОК МЕНЮ
+--============================================================
+
+КнопкаAim.MouseButton1Click:Connect(
+	function()
+
+		Настройки.AimВключен =
+			not Настройки.AimВключен
+
+
+		if not Настройки.AimВключен then
+
+			КнопкаЗажата = false
+
+			ТекущаяЦель = nil
+
 		end
 
+
+		ОбновитьМеню()
+
 	end
+)
 
-	return false
-end
 
-local function getCurrentWeapon()
+КнопкаПистолет.MouseButton1Click:Connect(
+	function()
 
-	local character =
-		LocalPlayer.Character
+		Настройки.ПистолетВключен =
+			not Настройки.ПистолетВключен
 
-	if not character then
+		ОбновитьМеню()
+
+	end
+)
+
+
+КнопкаAWP.MouseButton1Click:Connect(
+	function()
+
+		Настройки.AWPВключен =
+			not Настройки.AWPВключен
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+КнопкаЦели.MouseButton1Click:Connect(
+	function()
+
+		if Настройки.Цель ==
+			"ГОЛОВА" then
+
+			Настройки.Цель =
+				"ТЕЛО"
+
+		else
+
+			Настройки.Цель =
+				"ГОЛОВА"
+
+		end
+
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+--============================================================
+-- НАЗНАЧЕНИЕ БИНДА
+--============================================================
+
+КнопкаБинда.MouseButton1Click:Connect(
+	function()
+
+		ОжиданиеБинда = true
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+--============================================================
+-- РАДИУС
+--============================================================
+
+КнопкаРадиуса.MouseButton1Click:Connect(
+	function()
+
+		Настройки.Радиус += 20
+
+		if Настройки.Радиус > 600 then
+
+			Настройки.Радиус = 600
+
+		end
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+КнопкаРадиуса.MouseButton2Click:Connect(
+	function()
+
+		Настройки.Радиус -= 20
+
+		if Настройки.Радиус < 40 then
+
+			Настройки.Радиус = 40
+
+		end
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+--============================================================
+-- ПЛАВНОСТЬ
+--============================================================
+
+КнопкаПлавности.MouseButton1Click:Connect(
+	function()
+
+		Настройки.Плавность += 0.05
+
+		if Настройки.Плавность > 1 then
+
+			Настройки.Плавность = 1
+
+		end
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+КнопкаПлавности.MouseButton2Click:Connect(
+	function()
+
+		Настройки.Плавность -= 0.05
+
+		if Настройки.Плавность < 0.05 then
+
+			Настройки.Плавность = 0.05
+
+		end
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+КнопкаКруга.MouseButton1Click:Connect(
+	function()
+
+		Настройки.ПоказыватьКруг =
+			not Настройки.ПоказыватьКруг
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+КнопкаСтен.MouseButton1Click:Connect(
+	function()
+
+		Настройки.ПроверятьСтены =
+			not Настройки.ПроверятьСтены
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+КнопкаКоманды.MouseButton1Click:Connect(
+	function()
+
+		Настройки.ПроверятьКоманду =
+			not Настройки.ПроверятьКоманду
+
+		ОбновитьМеню()
+
+	end
+)
+
+
+--============================================================
+-- ПЕРЕТАСКИВАНИЕ МЕНЮ
+--============================================================
+
+local Перетаскивается = false
+
+local НачалоПеретаскивания = nil
+
+local НачальнаяПозицияМеню = nil
+
+
+Заголовок.InputBegan:Connect(
+	function(Ввод)
+
+		if Ввод.UserInputType ==
+			Enum.UserInputType.MouseButton1 then
+
+			Перетаскивается = true
+
+			НачалоПеретаскивания =
+				Ввод.Position
+
+			НачальнаяПозицияМеню =
+				Меню.Position
+
+		end
+	end
+)
+
+
+UserInputService.InputChanged:Connect(
+	function(Ввод)
+
+		if
+			Перетаскивается
+			and
+			Ввод.UserInputType ==
+			Enum.UserInputType.MouseMovement
+		then
+
+			local Разница =
+				Ввод.Position
+				-
+				НачалоПеретаскивания
+
+
+			Меню.Position =
+				UDim2.new(
+
+					НачальнаяПозицияМеню.X.Scale,
+
+					НачальнаяПозицияМеню.X.Offset
+					+
+					Разница.X,
+
+					НачальнаяПозицияМеню.Y.Scale,
+
+					НачальнаяПозицияМеню.Y.Offset
+					+
+					Разница.Y
+				)
+		end
+	end
+)
+
+
+UserInputService.InputEnded:Connect(
+	function(Ввод)
+
+		if Ввод.UserInputType ==
+			Enum.UserInputType.MouseButton1 then
+
+			Перетаскивается = false
+
+		end
+	end
+)
+
+
+--============================================================
+-- ПОИСК TOOL
+--============================================================
+
+local function ПолучитьОружие()
+
+	local Персонаж =
+		ЛокальныйИгрок.Character
+
+
+	if not Персонаж then
+
 		return nil
+
 	end
 
-	return character:FindFirstChildOfClass("Tool")
+
+	for _, Объект in ipairs(
+		Персонаж:GetChildren()
+	) do
+
+		if Объект:IsA("Tool") then
+
+			return Объект
+
+		end
+	end
+
+
+	return nil
 end
 
-local function weaponAllowed()
 
-	local tool = getCurrentWeapon()
+--============================================================
+-- ПОИСК ТЕКСТА В НАЗВАНИИ ОРУЖИЯ
+--============================================================
 
-	if not tool then
-		return false
+local function СодержитНазвание(
+	Название,
+	Список
+)
+
+	Название =
+		string.lower(
+			Название
+		)
+
+
+	for _, Слово in ipairs(
+		Список
+	) do
+
+		if string.find(
+			Название,
+			Слово,
+			1,
+			true
+		) then
+
+			return true
+
+		end
 	end
 
-	if tableContains(
-		PISTOL_NAMES,
-		tool.Name
-	) then
-
-		return Config.PistolEnabled
-	end
-
-	if tableContains(
-		AWP_NAMES,
-		tool.Name
-	) then
-
-		return Config.AWPEnabled
-	end
 
 	return false
 end
 
---==================================================
--- TARGET PART
---==================================================
 
-local function getAimPart(character)
+--============================================================
+-- МОЖНО ЛИ ИСПОЛЬЗОВАТЬ AIM С ТЕКУЩИМ ОРУЖИЕМ
+--============================================================
 
-	if Config.AimPart == "Head" then
+local function ОружиеРазрешено()
 
-		return character:FindFirstChild("Head")
+	local Оружие =
+		ПолучитьОружие()
 
-	else
+
+	-- Если игра использует собственную
+	-- систему оружия, а не Tool,
+	-- НЕ блокируем AIM.
+	if not Оружие then
+
+		return true
+
+	end
+
+
+	local Название =
+		string.lower(
+			Оружие.Name
+		)
+
+
+	if СодержитНазвание(
+		Название,
+		НазванияAWP
+	) then
 
 		return
-			character:FindFirstChild("UpperTorso")
-			or character:FindFirstChild("Torso")
-			or character:FindFirstChild("HumanoidRootPart")
+			Настройки.AWPВключен
 
 	end
+
+
+	if СодержитНазвание(
+		Название,
+		НазванияПистолетов
+	) then
+
+		return
+			Настройки.ПистолетВключен
+
+	end
+
+
+	-- Неизвестное оружие не блокируем.
+	return true
 end
 
---==================================================
--- VALID PLAYER
---==================================================
 
-local function validTarget(player)
+--============================================================
+-- ПОЛУЧЕНИЕ ТОЧКИ НАВЕДЕНИЯ
+--============================================================
 
-	if player == LocalPlayer then
-		return false
+local function ПолучитьЧастьЦели(
+	Персонаж
+)
+
+	if Настройки.Цель ==
+		"ГОЛОВА" then
+
+		return
+			Персонаж:FindFirstChild(
+				"Head",
+				true
+			)
+
 	end
 
-	if Config.TeamCheck then
 
-		if LocalPlayer.Team and
-			player.Team == LocalPlayer.Team then
+	return
+
+		Персонаж:FindFirstChild(
+			"UpperTorso",
+			true
+		)
+
+		or
+
+		Персонаж:FindFirstChild(
+			"Torso",
+			true
+		)
+
+		or
+
+		Персонаж:FindFirstChild(
+			"HumanoidRootPart",
+			true
+		)
+
+end
+
+
+--============================================================
+-- ПРОВЕРКА ИГРОКА
+--============================================================
+
+local function ЦельПодходит(
+	Игрок
+)
+
+	if Игрок ==
+		ЛокальныйИгрок then
+
+		return false
+
+	end
+
+
+	if Настройки.ПроверятьКоманду then
+
+		if
+			ЛокальныйИгрок.Team
+			and
+			Игрок.Team
+			and
+			Игрок.Team ==
+			ЛокальныйИгрок.Team
+		then
 
 			return false
 
 		end
 	end
 
-	local character = player.Character
 
-	if not character then
+	local Персонаж =
+		Игрок.Character
+
+
+	if not Персонаж then
+
 		return false
+
 	end
 
-	local humanoid =
-		character:FindFirstChildOfClass("Humanoid")
 
-	if not humanoid then
+	local Гуманоид =
+		Персонаж:FindFirstChildOfClass(
+			"Humanoid"
+		)
+
+
+	if not Гуманоид then
+
 		return false
+
 	end
 
-	if humanoid.Health <= 0 then
+
+	if Гуманоид.Health <= 0 then
+
 		return false
+
 	end
 
-	if not getAimPart(character) then
+
+	local ЧастьЦели =
+		ПолучитьЧастьЦели(
+			Персонаж
+		)
+
+
+	if not ЧастьЦели then
+
 		return false
+
 	end
+
 
 	return true
 end
 
---==================================================
--- WALL CHECK
---==================================================
 
-local function visible(character,targetPart)
+--============================================================
+-- ПРОВЕРКА ВИДИМОСТИ
+--============================================================
 
-	if not Config.WallCheck then
+local function ЦельВидима(
+	Персонаж,
+	ЧастьЦели
+)
+
+	if not Настройки.ПроверятьСтены then
+
 		return true
+
 	end
 
-	local params =
+
+	local Параметры =
 		RaycastParams.new()
 
-	params.FilterType =
+
+	Параметры.FilterType =
 		Enum.RaycastFilterType.Exclude
 
-	if LocalPlayer.Character then
 
-		params.FilterDescendantsInstances =
-			{LocalPlayer.Character}
+	local Исключения = {}
 
-	end
 
-	local origin =
-		Camera.CFrame.Position
+	if ЛокальныйИгрок.Character then
 
-	local direction =
-		targetPart.Position - origin
-
-	local result =
-		workspace:Raycast(
-			origin,
-			direction,
-			params
+		table.insert(
+			Исключения,
+			ЛокальныйИгрок.Character
 		)
 
-	if not result then
-		return true
 	end
+
+
+	Параметры.FilterDescendantsInstances =
+		Исключения
+
+
+	local Начало =
+		Камера.CFrame.Position
+
+
+	local Направление =
+		ЧастьЦели.Position
+		-
+		Начало
+
+
+	local Результат =
+		workspace:Raycast(
+
+			Начало,
+
+			Направление,
+
+			Параметры
+		)
+
+
+	if not Результат then
+
+		return true
+
+	end
+
 
 	return
-		result.Instance:IsDescendantOf(character)
-
+		Результат.Instance:IsDescendantOf(
+			Персонаж
+		)
 end
 
---==================================================
--- CLOSEST TARGET
---==================================================
 
-local function getClosestTarget()
+--============================================================
+-- ПОИСК БЛИЖАЙШЕЙ ЦЕЛИ ВНУТРИ КРУГА
+--============================================================
 
-	local viewport =
-		Camera.ViewportSize
+local function НайтиЦельВКруге()
 
-	local center =
+	Камера =
+		workspace.CurrentCamera
+
+
+	if not Камера then
+
+		return nil
+
+	end
+
+
+	local РазмерЭкрана =
+		Камера.ViewportSize
+
+
+	local ЦентрЭкрана =
 		Vector2.new(
-			viewport.X / 2,
-			viewport.Y / 2
+
+			РазмерЭкрана.X / 2,
+
+			РазмерЭкрана.Y / 2
 		)
 
-	local closestPlayer = nil
-	local closestDistance = Config.FOV
 
-	for _,player in ipairs(
+	local ЛучшаяЦель = nil
+
+	local ЛучшееРасстояние =
+		Настройки.Радиус
+
+
+	for _, Игрок in ipairs(
 		Players:GetPlayers()
 	) do
 
-		if validTarget(player) then
+		if ЦельПодходит(
+			Игрок
+		) then
 
-			local character =
-				player.Character
 
-			local targetPart =
-				getAimPart(character)
+			local Персонаж =
+				Игрок.Character
 
-			local worldDistance =
-				(
-					targetPart.Position -
-					Camera.CFrame.Position
-				).Magnitude
 
-			if worldDistance <=
-				Config.MaxDistance then
+			local ЧастьЦели =
+				ПолучитьЧастьЦели(
+					Персонаж
+				)
 
-				local screenPosition,onScreen =
-					Camera:WorldToViewportPoint(
-						targetPart.Position
-					)
 
-				if onScreen then
+			if ЧастьЦели then
 
-					local position =
-						Vector2.new(
-							screenPosition.X,
-							screenPosition.Y
+
+				local РасстояниеВМире =
+					(
+						ЧастьЦели.Position
+						-
+						Камера.CFrame.Position
+					).Magnitude
+
+
+				if РасстояниеВМире <=
+					Настройки.МаксимальнаяДистанция
+				then
+
+
+					local ЭкраннаяПозиция,
+						НаЭкране =
+
+						Камера:WorldToViewportPoint(
+							ЧастьЦели.Position
 						)
 
-					local distance =
-						(position-center).Magnitude
 
-					if distance <
-						closestDistance then
+					if
+						НаЭкране
+						and
+						ЭкраннаяПозиция.Z > 0
+					then
 
-						if visible(
-							character,
-							targetPart
-						) then
 
-							closestDistance =
-								distance
+						local Точка =
+							Vector2.new(
 
-							closestPlayer =
-								player
+								ЭкраннаяПозиция.X,
 
+								ЭкраннаяПозиция.Y
+							)
+
+
+						local РасстояниеОтЦентра =
+							(
+								Точка
+								-
+								ЦентрЭкрана
+							).Magnitude
+
+
+						-- ВАЖНАЯ ПРОВЕРКА:
+						-- цель должна находиться
+						-- ВНУТРИ нарисованного круга.
+						if
+							РасстояниеОтЦентра
+							<=
+							Настройки.Радиус
+							and
+							РасстояниеОтЦентра
+							<
+							ЛучшееРасстояние
+						then
+
+
+							if ЦельВидима(
+								Персонаж,
+								ЧастьЦели
+							) then
+
+
+								ЛучшееРасстояние =
+									РасстояниеОтЦентра
+
+
+								ЛучшаяЦель =
+									Игрок
+
+							end
 						end
-
 					end
 				end
 			end
 		end
 	end
 
-	return closestPlayer
+
+	return ЛучшаяЦель
 end
 
---==================================================
--- INPUT
---==================================================
 
-UIS.InputBegan:Connect(function(input,processed)
+--============================================================
+-- ПРОВЕРКА БИНДА
+--============================================================
 
-	if waitingForBind then
+local function ЭтоНашБинд(
+	Ввод
+)
 
-		if input.UserInputType ==
-			Enum.UserInputType.Keyboard then
+	if БиндМыши then
 
-			Config.AimKey =
-				input.KeyCode
+		return
+			Ввод.UserInputType ==
+			БиндМыши
 
-			waitingForBind = false
+	end
 
-			refreshMenu()
 
+	if БиндКлавиатуры then
+
+		return
+			Ввод.KeyCode ==
+			БиндКлавиатуры
+
+	end
+
+
+	return false
+end
+
+
+--============================================================
+-- НАЖАТИЕ КНОПКИ
+--============================================================
+
+UserInputService.InputBegan:Connect(
+	function(
+		Ввод,
+		ОбработанИгрой
+	)
+
+
+		--====================================================
+		-- НАЗНАЧЕНИЕ НОВОГО БИНДА
+		--====================================================
+
+		if ОжиданиеБинда then
+
+
+			if Ввод.KeyCode ==
+				Enum.KeyCode.Escape then
+
+				ОжиданиеБинда = false
+
+				ОбновитьМеню()
+
+				return
+			end
+
+
+			if Ввод.UserInputType ==
+				Enum.UserInputType.Keyboard
+			then
+
+
+				if Ввод.KeyCode ~=
+					Enum.KeyCode.Unknown
+				then
+
+					БиндКлавиатуры =
+						Ввод.KeyCode
+
+					БиндМыши = nil
+
+					ОжиданиеБинда =
+						false
+
+					ОбновитьМеню()
+
+					return
+				end
+			end
+
+
+			if
+
+				Ввод.UserInputType ==
+				Enum.UserInputType.MouseButton1
+
+				or
+
+				Ввод.UserInputType ==
+				Enum.UserInputType.MouseButton2
+
+				or
+
+				Ввод.UserInputType ==
+				Enum.UserInputType.MouseButton3
+
+			then
+
+
+				БиндМыши =
+					Ввод.UserInputType
+
+				БиндКлавиатуры =
+					nil
+
+				ОжиданиеБинда =
+					false
+
+				ОбновитьМеню()
+
+				return
+			end
 		end
 
-		return
-	end
 
-	if processed then
-		return
-	end
+		-- Если пользователь печатает в TextBox,
+		-- AIM не включаем.
+		if UserInputService:GetFocusedTextBox() then
 
-	if input.KeyCode ==
-		Config.AimKey then
-
-		if not Config.Enabled then
 			return
+
 		end
 
-		if not weaponAllowed() then
+
+		-- ВАЖНО:
+		-- специально НЕ используем
+		-- "if ОбработанИгрой then return end"
+		--
+		-- Потому что FPS-игра может сама
+		-- помечать ПКМ/ЛКМ как обработанную кнопку,
+		-- из-за чего AIM раньше не запускался.
+
+
+		if ЭтоНашБинд(
+			Ввод
+		) then
+
+
+			if not Настройки.AimВключен then
+
+				return
+
+			end
+
+
+			if not ОружиеРазрешено() then
+
+				Статус.Text =
+					"СТАТУС: AIM ДЛЯ ЭТОГО ОРУЖИЯ ВЫКЛ"
+
+				return
+
+			end
+
+
+			КнопкаЗажата = true
+
+
+			-- Сразу ищем цель внутри круга.
+			ТекущаяЦель =
+				НайтиЦельВКруге()
+
+
+			if ТекущаяЦель then
+
+				Статус.Text =
+					"ЦЕЛЬ ЗАХВАЧЕНА: "
+					..
+					ТекущаяЦель.Name
+
+			else
+
+				Статус.Text =
+					"СТАТУС: ИЩУ ЦЕЛЬ В КРУГЕ"
+
+			end
+
+		end
+	end
+)
+
+
+--============================================================
+-- ОТПУСКАНИЕ КНОПКИ
+--============================================================
+
+UserInputService.InputEnded:Connect(
+	function(
+		Ввод
+	)
+
+
+		if ЭтоНашБинд(
+			Ввод
+		) then
+
+
+			КнопкаЗажата = false
+
+
+			-- Вот здесь цель отпускается.
+			ТекущаяЦель = nil
+
+
+			Статус.Text =
+				"СТАТУС: ОЖИДАНИЕ"
+
+		end
+	end
+)
+
+
+--============================================================
+-- ОСНОВНОЙ ЦИКЛ AIM
+--============================================================
+--
+-- Используем BindToRenderStep с очень высоким приоритетом.
+--
+-- Это важно для FPS:
+-- сначала игра обновляет свою камеру,
+-- а ПОТОМ наш AIM корректирует направление камеры.
+--
+--============================================================
+
+RunService:BindToRenderStep(
+
+	"РусскийAim",
+
+	Enum.RenderPriority.Last.Value - 1,
+
+	function(ДельтаВремени)
+
+
+		Камера =
+			workspace.CurrentCamera
+
+
+		if not Камера then
+
 			return
+
 		end
 
-		aiming = true
 
-		currentTarget =
-			getClosestTarget()
+		--====================================================
+		-- ОБНОВЛЕНИЕ КРУГА
+		--====================================================
+
+		local РазмерЭкрана =
+			Камера.ViewportSize
+
+
+		Круг.Position =
+			UDim2.fromOffset(
+
+				РазмерЭкрана.X / 2,
+
+				РазмерЭкрана.Y / 2
+			)
+
+
+		Круг.Size =
+			UDim2.fromOffset(
+
+				Настройки.Радиус * 2,
+
+				Настройки.Радиус * 2
+			)
+
+
+		Круг.Visible =
+
+			Настройки.AimВключен
+
+			and
+
+			Настройки.ПоказыватьКруг
+
+
+		--====================================================
+		-- AIM НЕ ЗАЖАТ
+		--====================================================
+
+		if not КнопкаЗажата then
+
+			return
+
+		end
+
+
+		if not Настройки.AimВключен then
+
+			КнопкаЗажата = false
+
+			ТекущаяЦель = nil
+
+			return
+
+		end
+
+
+		if not ОружиеРазрешено() then
+
+			return
+
+		end
+
+
+		--====================================================
+		-- ЕСЛИ ЦЕЛИ НЕТ — ПРОДОЛЖАЕМ ИСКАТЬ
+		--====================================================
+		--
+		-- То есть можно сначала зажать кнопку,
+		-- а потом провести прицелом по противнику.
+		-- Как только он войдёт в круг,
+		-- AIM его захватит.
+		--
+		--====================================================
+
+		if not ТекущаяЦель then
+
+
+			ТекущаяЦель =
+				НайтиЦельВКруге()
+
+
+			if ТекущаяЦель then
+
+				Статус.Text =
+					"ЦЕЛЬ ЗАХВАЧЕНА: "
+					..
+					ТекущаяЦель.Name
+
+			else
+
+				Статус.Text =
+					"СТАТУС: ИЩУ ЦЕЛЬ В КРУГЕ"
+
+				return
+
+			end
+		end
+
+
+		--====================================================
+		-- ПРОВЕРКА, ЖИВА ЛИ ЗАХВАЧЕННАЯ ЦЕЛЬ
+		--====================================================
+
+		if not ЦельПодходит(
+			ТекущаяЦель
+		) then
+
+
+			ТекущаяЦель = nil
+
+
+			-- Пока бинд всё ещё зажат,
+			-- сразу пытаемся найти следующую цель.
+			ТекущаяЦель =
+				НайтиЦельВКруге()
+
+
+			return
+
+		end
+
+
+		local Персонаж =
+			ТекущаяЦель.Character
+
+
+		if not Персонаж then
+
+			ТекущаяЦель = nil
+
+			return
+
+		end
+
+
+		local ЧастьЦели =
+			ПолучитьЧастьЦели(
+				Персонаж
+			)
+
+
+		if not ЧастьЦели then
+
+			ТекущаяЦель = nil
+
+			return
+
+		end
+
+
+		--====================================================
+		-- ВАЖНО:
+		--
+		-- ЗДЕСЬ МЫ БОЛЬШЕ НЕ ПРОВЕРЯЕМ КРУГ.
+		--
+		-- Круг используется ТОЛЬКО для
+		-- первоначального захвата.
+		--
+		-- После захвата камера держит этого игрока,
+		-- пока ты не отпустишь бинд.
+		--====================================================
+
+
+		local ПозицияКамеры =
+			Камера.CFrame.Position
+
+
+		local НужноеНаправление =
+			CFrame.lookAt(
+
+				ПозицияКамеры,
+
+				ЧастьЦели.Position
+			)
+
+
+		-- Плавность с учётом FPS.
+		local Коэффициент =
+
+			1
+
+			-
+
+			math.pow(
+
+				1
+				-
+				math.clamp(
+					Настройки.Плавность,
+					0.01,
+					1
+				),
+
+				ДельтаВремени * 60
+			)
+
+
+		Камера.CFrame =
+			Камера.CFrame:Lerp(
+
+				НужноеНаправление,
+
+				Коэффициент
+			)
+
+
+		Статус.Text =
+
+			"ДЕРЖУ: "
+
+			..
+
+			ТекущаяЦель.Name
+
+			..
+
+			" → "
+
+			..
+
+			Настройки.Цель
 
 	end
-end)
+)
 
-UIS.InputEnded:Connect(function(input)
 
-	if input.KeyCode ==
-		Config.AimKey then
+--============================================================
+-- INSERT — ПОКАЗАТЬ / СКРЫТЬ МЕНЮ
+--============================================================
 
-		aiming = false
-		currentTarget = nil
+UserInputService.InputBegan:Connect(
+	function(
+		Ввод
+	)
 
+		if Ввод.KeyCode ==
+			Enum.KeyCode.Insert
+		then
+
+			МенюОткрыто =
+				not МенюОткрыто
+
+			Меню.Visible =
+				МенюОткрыто
+
+		end
 	end
-end)
+)
 
---==================================================
--- MAIN LOOP
---==================================================
 
-RunService.RenderStepped:Connect(function()
+--============================================================
+-- ЕСЛИ ЗАХВАЧЕННЫЙ ИГРОК ВЫШЕЛ
+--============================================================
 
-	--------------------------------
-	-- FOV CIRCLE
-	--------------------------------
+Players.PlayerRemoving:Connect(
+	function(
+		Игрок
+	)
 
-	local viewport =
-		Camera.ViewportSize
+		if ТекущаяЦель ==
+			Игрок
+		then
 
-	FOVCircle.Position =
-		UDim2.fromOffset(
-			viewport.X / 2,
-			viewport.Y / 2
-		)
+			ТекущаяЦель = nil
 
-	FOVCircle.Size =
-		UDim2.fromOffset(
-			Config.FOV * 2,
-			Config.FOV * 2
-		)
-
-	FOVCircle.Visible =
-		Config.ShowFOV
-		and Config.Enabled
-
-	--------------------------------
-	-- AIM
-	--------------------------------
-
-	if not aiming then
-		return
+		end
 	end
+)
 
-	if not Config.Enabled then
-		return
-	end
 
-	if not weaponAllowed() then
-
-		aiming = false
-		currentTarget = nil
-
-		return
-	end
-
-	if not currentTarget or
-		not validTarget(currentTarget) then
-
-		currentTarget =
-			getClosestTarget()
-
-	end
-
-	if not currentTarget then
-		return
-	end
-
-	local character =
-		currentTarget.Character
-
-	local targetPart =
-		getAimPart(character)
-
-	if not targetPart then
-
-		currentTarget = nil
-		return
-
-	end
-
-	if not visible(
-		character,
-		targetPart
-	) then
-
-		currentTarget =
-			getClosestTarget()
-
-		return
-	end
-
-	local cameraPosition =
-		Camera.CFrame.Position
-
-	local desired =
-		CFrame.lookAt(
-			cameraPosition,
-			targetPart.Position
-		)
-
-	Camera.CFrame =
-		Camera.CFrame:Lerp(
-			desired,
-			Config.Smoothness
-		)
-
-end)
+print(
+	"[AIM] Русская система AIM успешно загружена"
+)
