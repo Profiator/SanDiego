@@ -43,36 +43,77 @@ local BUY_RETRY = 5
 local STATE_REFRESH = 8
 
 -- =========================================================
--- RARITIES
--- Selected rarity is the MINIMUM rarity that will be kept.
--- MYTHIC+ => Common..Legendary sell; Mythic+ keep.
+-- РЕДКОСТИ ДЛЯ АВТОПРОДАЖИ
+-- Галочка = эту редкость ОСТАВИТЬ.
+-- Без галочки = эту редкость ПРОДАТЬ.
 -- =========================================================
 
 local rarityList = {
-    {key="COMUNE",      name="COMMON",    rank=1},
-    {key="NON COMUNE",  name="UNCOMMON",  rank=2},
-    {key="RARO",        name="RARE",      rank=3},
-    {key="EPICO",       name="EPIC",      rank=4},
-    {key="LEGGENDARIO", name="LEGENDARY", rank=5},
-    {key="MITICO",      name="MYTHIC",    rank=6},
-    {key="SECRET",      name="SECRET",    rank=7},
-    {key="DIVINO",      name="DIVINE",    rank=8},
-    {key="LIMITED",     name="LIMITED",   rank=9},
+    {key="COMMON",    ru="Обычный"},
+    {key="UNCOMMON",  ru="Необычный"},
+    {key="RARE",      ru="Редкий"},
+    {key="EPIC",      ru="Эпический"},
+    {key="LEGENDARY", ru="Легендарный"},
+    {key="MYTHIC",    ru="Мифический"},
+    {key="SECRET",    ru="Секретный"},
+    {key="DIVINE",    ru="Божественный"},
+    {key="LIMITED",   ru="Лимитированный"},
 }
 
-local ranks = {
-    ["COMUNE"]=1, ["COMMON"]=1,
-    ["NON COMUNE"]=2, ["UNCOMMON"]=2,
-    ["RARO"]=3, ["RARE"]=3,
-    ["EPICO"]=4, ["EPIC"]=4,
-    ["LEGGENDARIO"]=5, ["LEGENDARY"]=5,
-    ["MITICO"]=6, ["MYTHIC"]=6,
-    ["SECRET"]=7,
-    ["DIVINO"]=8, ["DIVINE"]=8,
-    ["LIMITED"]=9,
+-- По умолчанию оставляем Mythic и выше.
+local keepRarities = {
+    COMMON = false,
+    UNCOMMON = false,
+    RARE = false,
+    EPIC = false,
+    LEGENDARY = false,
+    MYTHIC = true,
+    SECRET = true,
+    DIVINE = true,
+    LIMITED = true,
 }
 
-local keepIndex = 6 -- MYTHIC+
+local rarityAliases = {
+    ["COMUNE"] = "COMMON",
+    ["COMMON"] = "COMMON",
+
+    ["NON COMUNE"] = "UNCOMMON",
+    ["UNCOMMON"] = "UNCOMMON",
+
+    ["RARO"] = "RARE",
+    ["RARE"] = "RARE",
+
+    ["EPICO"] = "EPIC",
+    ["EPIC"] = "EPIC",
+
+    ["LEGGENDARIO"] = "LEGENDARY",
+    ["LEGENDARY"] = "LEGENDARY",
+
+    ["MITICO"] = "MYTHIC",
+    ["MYTHIC"] = "MYTHIC",
+
+    ["SECRET"] = "SECRET",
+
+    ["DIVINO"] = "DIVINE",
+    ["DIVINE"] = "DIVINE",
+
+    ["LIMITED"] = "LIMITED",
+}
+
+local function canonicalRarity(value)
+    local key = string.upper(tostring(value or "COMMON"))
+    return rarityAliases[key] or key
+end
+
+local function keptRarityCount()
+    local n = 0
+    for _, info in ipairs(rarityList) do
+        if keepRarities[info.key] == true then
+            n = n + 1
+        end
+    end
+    return n
+end
 
 -- =========================================================
 -- STATE
@@ -94,7 +135,7 @@ local statusSellText = "Ждём первый инвентарь..."
 -- GUI refs assigned later
 local eventStatusLabel
 local sellStatusLabel
-local rarityButton
+local rarityButtons = {}
 
 -- =========================================================
 -- HELPERS
@@ -116,10 +157,6 @@ local function setSellStatus(text)
     if sellStatusLabel then
         sellStatusLabel.Text = statusSellText
     end
-end
-
-local function getRank(rarity)
-    return ranks[string.upper(tostring(rarity or "COMUNE"))] or 1
 end
 
 local function shouldKeep(slime)
@@ -147,7 +184,8 @@ local function shouldKeep(slime)
         return true
     end
 
-    return getRank(slime.Rarity) >= rarityList[keepIndex].rank
+    local rarity = canonicalRarity(slime.Rarity)
+    return keepRarities[rarity] == true
 end
 
 -- =========================================================
@@ -160,7 +198,7 @@ InventoryUpdate.OnClientEvent:Connect(function(inventory)
         inventoryVersion = inventoryVersion + 1
         setSellStatus(
             "Инвентарь: " .. tostring(#inventory) ..
-            " | оставить " .. rarityList[keepIndex].name .. "+"
+            " | отмечено оставить: " .. tostring(keptRarityCount())
         )
     end
 end)
@@ -307,15 +345,15 @@ local function autoSellNow()
 
     if #sellList == 0 then
         setSellStatus(
-            "Нечего продавать | оставить " ..
-            rarityList[keepIndex].name .. "+"
+            "Нечего продавать | отмечено оставить: " ..
+            tostring(keptRarityCount())
         )
         selling = false
         return
     end
 
     setSellStatus("Продаём: " .. tostring(#sellList) .. " шт.")
-    log("SELL START:", #sellList, "keep", rarityList[keepIndex].name .. "+")
+    log("SELL START:", #sellList, "| keep selected:", keptRarityCount())
 
     local sold = 0
 
@@ -342,7 +380,7 @@ local function autoSellNow()
 
     setSellStatus(
         "Продано запросов: " .. tostring(sold) ..
-        " | оставить " .. rarityList[keepIndex].name .. "+"
+        " | отмечено оставить: " .. tostring(keptRarityCount())
     )
 
     selling = false
@@ -546,6 +584,7 @@ end
 for _, name in ipairs({
     "Arc2playAutoManager",
     "Arc2playAutoManagerV2",
+    "Arc2playAutoManagerV3",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -554,13 +593,13 @@ for _, name in ipairs({
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "Arc2playAutoManagerV2"
+gui.Name = "Arc2playAutoManagerV3"
 gui.ResetOnSpawn = false
 gui.Parent = guiParent
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(390, 310)
-frame.Position = UDim2.new(0, 20, 0.5, -155)
+frame.Size = UDim2.fromOffset(455, 445)
+frame.Position = UDim2.new(0, 20, 0.5, -222)
 frame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -576,7 +615,7 @@ title.BackgroundTransparency = 1
 title.Position = UDim2.fromOffset(14, 8)
 title.Size = UDim2.new(1, -28, 0, 30)
 title.Font = Enum.Font.GothamBold
-title.Text = "MEGA RAMP FOR SLIME • AUTO V2"
+title.Text = "MEGA RAMP FOR SLIME • AUTO V3"
 title.TextSize = 15
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -670,57 +709,90 @@ makeToggle(sellRow, AUTO_SELL, function(v)
     end
 end)
 
-local rarityRow, rarityLabel = makeRow(142, "Оставлять редкость")
-rarityLabel.Size = UDim2.new(1, -155, 1, 0)
+local keepTitle = Instance.new("TextLabel")
+keepTitle.BackgroundTransparency = 1
+keepTitle.Position = UDim2.fromOffset(16, 143)
+keepTitle.Size = UDim2.new(1, -32, 0, 25)
+keepTitle.Font = Enum.Font.GothamBold
+keepTitle.Text = "ЧТО ОСТАВЛЯТЬ  •  ✓ = оставить, пусто = продать"
+keepTitle.TextSize = 11
+keepTitle.TextColor3 = Color3.fromRGB(245, 245, 248)
+keepTitle.TextXAlignment = Enum.TextXAlignment.Left
+keepTitle.Parent = frame
 
-rarityButton = Instance.new("TextButton")
-rarityButton.AnchorPoint = Vector2.new(1, 0.5)
-rarityButton.Position = UDim2.new(1, -10, 0.5, 0)
-rarityButton.Size = UDim2.fromOffset(135, 27)
-rarityButton.BackgroundColor3 = Color3.fromRGB(92, 62, 195)
-rarityButton.BorderSizePixel = 0
-rarityButton.Font = Enum.Font.GothamBold
-rarityButton.TextColor3 = Color3.new(1, 1, 1)
-rarityButton.TextSize = 9
-rarityButton.Parent = rarityRow
+local grid = Instance.new("Frame")
+grid.Position = UDim2.fromOffset(12, 170)
+grid.Size = UDim2.new(1, -24, 0, 132)
+grid.BackgroundTransparency = 1
+grid.Parent = frame
 
-local rc = Instance.new("UICorner")
-rc.CornerRadius = UDim.new(0, 7)
-rc.Parent = rarityButton
+local layout = Instance.new("UIGridLayout")
+layout.CellSize = UDim2.new(0, 137, 0, 38)
+layout.CellPadding = UDim2.new(0, 8, 0, 7)
+layout.FillDirectionMaxCells = 3
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = grid
 
-local function drawRarity()
-    rarityButton.Text = rarityList[keepIndex].name .. "+"
+local function drawRarityCheckbox(key)
+    local button = rarityButtons[key]
+    if not button then return end
+
+    if keepRarities[key] == true then
+        button.BackgroundColor3 = Color3.fromRGB(38, 150, 76)
+        button.Text = "✓  " .. button:GetAttribute("RuName")
+    else
+        button.BackgroundColor3 = Color3.fromRGB(55, 57, 66)
+        button.Text = "□  " .. button:GetAttribute("RuName")
+    end
 end
 
-rarityButton.MouseButton1Click:Connect(function()
-    keepIndex = keepIndex + 1
+for order, info in ipairs(rarityList) do
+    local b = Instance.new("TextButton")
+    b.LayoutOrder = order
+    b.BackgroundColor3 = Color3.fromRGB(55, 57, 66)
+    b.BorderSizePixel = 0
+    b.AutoButtonColor = false
+    b.Font = Enum.Font.GothamBold
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.TextSize = 10
+    b:SetAttribute("RarityKey", info.key)
+    b:SetAttribute("RuName", info.ru)
+    b.Parent = grid
 
-    if keepIndex > #rarityList then
-        keepIndex = 1
-    end
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 7)
+    c.Parent = b
 
-    drawRarity()
-    setSellStatus("Оставляем " .. rarityList[keepIndex].name .. "+")
-end)
+    rarityButtons[info.key] = b
+    drawRarityCheckbox(info.key)
 
-drawRarity()
+    b.MouseButton1Click:Connect(function()
+        keepRarities[info.key] = not (keepRarities[info.key] == true)
+        drawRarityCheckbox(info.key)
 
-local eventStatusRow = makeRow(191, "", 35)
+        if keepRarities[info.key] then
+            setSellStatus(info.ru .. ": ОСТАВЛЯЕМ")
+        else
+            setSellStatus(info.ru .. ": БУДЕМ ПРОДАВАТЬ")
+        end
+    end)
+end
+
+local eventStatusRow = makeRow(309, "", 35)
 eventStatusLabel = eventStatusRow:FindFirstChildOfClass("TextLabel")
 eventStatusLabel.Size = UDim2.new(1, -20, 1, 0)
 eventStatusLabel.TextColor3 = Color3.fromRGB(255, 210, 90)
 eventStatusLabel.Text = statusEventText
 
-local sellStatusRow = makeRow(232, "", 35)
+local sellStatusRow = makeRow(350, "", 35)
 sellStatusLabel = sellStatusRow:FindFirstChildOfClass("TextLabel")
 sellStatusLabel.Size = UDim2.new(1, -20, 1, 0)
 sellStatusLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
 sellStatusLabel.Text = statusSellText
 
--- Manual diagnostic buttons.
 local buyNow = Instance.new("TextButton")
-buyNow.Size = UDim2.fromOffset(176, 28)
-buyNow.Position = UDim2.fromOffset(12, 274)
+buyNow.Size = UDim2.fromOffset(205, 38)
+buyNow.Position = UDim2.fromOffset(12, 395)
 buyNow.BackgroundColor3 = Color3.fromRGB(40, 160, 75)
 buyNow.BorderSizePixel = 0
 buyNow.Font = Enum.Font.GothamBold
@@ -741,8 +813,8 @@ buyNow.MouseButton1Click:Connect(function()
 end)
 
 local sellNow = Instance.new("TextButton")
-sellNow.Size = UDim2.fromOffset(176, 28)
-sellNow.Position = UDim2.fromOffset(202, 274)
+sellNow.Size = UDim2.fromOffset(205, 38)
+sellNow.Position = UDim2.fromOffset(238, 395)
 sellNow.BackgroundColor3 = Color3.fromRGB(185, 65, 65)
 sellNow.BorderSizePixel = 0
 sellNow.Font = Enum.Font.GothamBold
@@ -759,7 +831,7 @@ sellNow.MouseButton1Click:Connect(function()
     task.spawn(autoSellNow)
 end)
 
-log("Loaded.")
+log("Loaded V3.")
 log("Event:", EVENT_ID)
 log("AutoEvent:", AUTO_EVENT, "AutoSell:", AUTO_SELL)
-log("Keep:", rarityList[keepIndex].name .. "+")
+log("Checked rarities to keep:", keptRarityCount())
