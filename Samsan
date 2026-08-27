@@ -1,1466 +1,309 @@
---========================================================
--- КЛИЕНТСКИЙ AIM ДЛЯ ROBLOX
--- Никакие RemoteEvent / FireServer не используются.
---
--- ЛОГИКА:
--- 1. Зажимаешь назначенную кнопку.
--- 2. AIM ищет ближайшую цель ВНУТРИ круга.
--- 3. Цель захватывается.
--- 4. После захвата AIM НЕ отпускает её,
---    даже если она вышла из круга.
--- 5. Отпускаешь кнопку -> цель сбрасывается.
---
--- INSERT = показать / скрыть меню.
---========================================================
-
-
---========================================================
--- СЕРВИСЫ
---========================================================
+-- ARC2PLAY Auto Event + Auto Sell
+-- Для своей игры / тестового place.
 
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
 
-local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
 
+local EventShopAction = remotes:WaitForChild("EventShopAction")
+local InventoryUpdate = remotes:WaitForChild("InventoryUpdate")
+local SlimeReveal = remotes:WaitForChild("SlimeReveal")
+local SellSlimeAction = remotes:WaitForChild("SellSlimeAction")
 
---========================================================
--- НАСТРОЙКИ
---========================================================
+-- Твоё серверное x100-событие.
+local EVENT_ID = "SATURN_LUCK_100X_RAINBOW_FOUR_LEAF_CLOVER_MILLIONAIRE"
+local EVENT_DURATION = 600 -- 10 минут
 
-local Settings = {
+local AUTO_EVENT = true
+local AUTO_SELL = true
 
-	Enabled = true,
+-- Купленных/VIP не продаём.
+local KEEP_PURCHASED = true
+local KEEP_VIP = true
 
-	-- Если true, союзников не захватываем.
-	TeamCheck = false,
+-- После последнего выпадения ждём, чтобы серия OPEN успела закончиться.
+local SELL_DEBOUNCE = 1.5
+local SELL_INTERVAL = 0.12
 
-	-- Проверять стены при первоначальном захвате.
-	WallCheck = false,
-
-	-- Максимальная дистанция.
-	MaxDistance = 5000,
-
-	-- Ручной профиль.
-	CurrentProfile = "AWP",
-
-	-- Попытка автоматически определить Tool.
-	AutoWeapon = false,
-
-	ShowCircle = true,
+local rarityList = {
+    {key="COMUNE",      name="COMMON",    rank=1},
+    {key="NON COMUNE",  name="UNCOMMON",  rank=2},
+    {key="RARO",        name="RARE",      rank=3},
+    {key="EPICO",       name="EPIC",      rank=4},
+    {key="LEGGENDARIO", name="LEGENDARY", rank=5},
+    {key="MITICO",      name="MYTHIC",    rank=6},
+    {key="SECRET",      name="SECRET",    rank=7},
+    {key="DIVINO",      name="DIVINE",    rank=8},
+    {key="LIMITED",     name="LIMITED",   rank=9},
 }
 
-
---========================================================
--- ОТДЕЛЬНЫЕ НАСТРОЙКИ ОРУЖИЯ
---========================================================
-
-local Profiles = {
-
-	PISTOL = {
-
-		Enabled = true,
-
-		FOV = 180,
-
-		Smoothness = 0.20,
-
-		Target = "HEAD",
-	},
-
-	AWP = {
-
-		Enabled = true,
-
-		FOV = 120,
-
-		Smoothness = 0.35,
-
-		Target = "HEAD",
-	},
+local ranks = {
+    ["COMUNE"]=1,["COMMON"]=1,
+    ["NON COMUNE"]=2,["UNCOMMON"]=2,
+    ["RARO"]=3,["RARE"]=3,
+    ["EPICO"]=4,["EPIC"]=4,
+    ["LEGGENDARIO"]=5,["LEGENDARY"]=5,
+    ["MITICO"]=6,["MYTHIC"]=6,
+    ["SECRET"]=7,
+    ["DIVINO"]=8,["DIVINE"]=8,
+    ["LIMITED"]=9,
 }
 
-
---========================================================
--- НАЗВАНИЯ ОРУЖИЯ ДЛЯ АВТООПРЕДЕЛЕНИЯ
---========================================================
-
-local PistolNames = {
-	"pistol",
-	"glock",
-	"usp",
-	"deagle",
-	"revolver",
-	"five seven",
-}
-
-local AWPNames = {
-	"awp",
-	"sniper",
-	"sniper rifle",
-}
-
-
---========================================================
--- БИНД
---========================================================
-
--- По умолчанию Q.
-local AimKeyCode = Enum.KeyCode.Q
-local AimMouseButton = nil
-
-
---========================================================
--- ПЕРЕМЕННЫЕ
---========================================================
-
-local AimHeld = false
-
-local LockedPlayer = nil
-
-local WaitingForBind = false
-
-local MenuVisible = true
-
-
---========================================================
--- GUI
---========================================================
-
-local Gui = Instance.new("ScreenGui")
-
-Gui.Name = "ClientAimMenu"
-
-Gui.IgnoreGuiInset = true
-
-Gui.ResetOnSpawn = false
-
-Gui.DisplayOrder = 999999
-
-Gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-
---========================================================
--- КРУГ AIM
---========================================================
-
-local FovCircle = Instance.new("Frame")
-
-FovCircle.Name = "ЗонаAim"
-
-FovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-
-FovCircle.BackgroundTransparency = 1
-
-FovCircle.BorderSizePixel = 0
-
-FovCircle.ZIndex = 1
-
-FovCircle.Parent = Gui
-
-
-local FovCorner = Instance.new("UICorner")
-
-FovCorner.CornerRadius = UDim.new(1, 0)
-
-FovCorner.Parent = FovCircle
-
-
-local FovStroke = Instance.new("UIStroke")
-
-FovStroke.Color = Color3.fromRGB(255, 255, 255)
-
-FovStroke.Thickness = 2
-
-FovStroke.Transparency = 0.15
-
-FovStroke.Parent = FovCircle
-
-
---========================================================
--- ГЛАВНОЕ МЕНЮ
---========================================================
-
-local Menu = Instance.new("Frame")
-
-Menu.Size = UDim2.fromOffset(350, 480)
-
-Menu.Position = UDim2.new(0, 30, 0.5, -240)
-
-Menu.BackgroundColor3 = Color3.fromRGB(18, 19, 24)
-
-Menu.BorderSizePixel = 0
-
-Menu.ZIndex = 20
-
-Menu.Parent = Gui
-
-
-local MenuCorner = Instance.new("UICorner")
-
-MenuCorner.CornerRadius = UDim.new(0, 10)
-
-MenuCorner.Parent = Menu
-
-
-local MenuStroke = Instance.new("UIStroke")
-
-MenuStroke.Color = Color3.fromRGB(75, 76, 90)
-
-MenuStroke.Thickness = 1
-
-MenuStroke.Parent = Menu
-
-
---========================================================
--- ЗАГОЛОВОК
---========================================================
-
-local Title = Instance.new("TextLabel")
-
-Title.Size = UDim2.new(1, 0, 0, 42)
-
-Title.BackgroundTransparency = 1
-
-Title.Text = "НАСТРОЙКИ AIM"
-
-Title.TextColor3 = Color3.new(1, 1, 1)
-
-Title.Font = Enum.Font.GothamBold
-
-Title.TextSize = 19
-
-Title.Active = true
-
-Title.ZIndex = 21
-
-Title.Parent = Menu
-
-
---========================================================
--- СТАТУС
---========================================================
-
-local Status = Instance.new("TextLabel")
-
-Status.Size = UDim2.new(1, -30, 0, 25)
-
-Status.Position = UDim2.fromOffset(15, 40)
-
-Status.BackgroundTransparency = 1
-
-Status.Text = "СТАТУС: ОЖИДАНИЕ"
-
-Status.TextColor3 = Color3.fromRGB(190, 190, 200)
-
-Status.TextXAlignment = Enum.TextXAlignment.Left
-
-Status.Font = Enum.Font.Gotham
-
-Status.TextSize = 12
-
-Status.ZIndex = 21
-
-Status.Parent = Menu
-
-
---========================================================
--- СОЗДАНИЕ КНОПКИ
---========================================================
-
-local function createButton(y)
-
-	local button = Instance.new("TextButton")
-
-	button.Size = UDim2.new(1, -30, 0, 38)
-
-	button.Position = UDim2.fromOffset(15, y)
-
-	button.BackgroundColor3 = Color3.fromRGB(35, 36, 44)
-
-	button.BorderSizePixel = 0
-
-	button.TextColor3 = Color3.new(1, 1, 1)
-
-	button.Font = Enum.Font.GothamMedium
-
-	button.TextSize = 13
-
-	button.ZIndex = 21
-
-	button.Parent = Menu
-
-
-	local corner = Instance.new("UICorner")
-
-	corner.CornerRadius = UDim.new(0, 7)
-
-	corner.Parent = button
-
-
-	return button
+-- По умолчанию MYTHIC+: Mythic и выше оставляем, всё ниже продаём.
+local keepIndex = 6
+local latestInventory = {}
+local nextEventAt = 0
+local eventBusy = false
+local selling = false
+local revealGeneration = 0
+
+local function getRank(rarity)
+    return ranks[string.upper(tostring(rarity or "COMUNE"))] or 1
 end
 
+local function shouldKeep(slime)
+    if not slime then return true end
 
-local AimButton = createButton(72)
+    if KEEP_PURCHASED and (
+        slime.IsPurchasedSlime == true or
+        slime.NoEventCoins == true or
+        tostring(slime.PaidItemType or "") == "PurchasedSlime"
+    ) then
+        return true
+    end
 
-local ProfileButton = createButton(116)
+    if KEEP_VIP and slime.IsVIP == true then
+        return true
+    end
 
-local WeaponButton = createButton(160)
-
-local TargetButton = createButton(204)
-
-local BindButton = createButton(248)
-
-local FovButton = createButton(292)
-
-local SmoothButton = createButton(336)
-
-local CircleButton = createButton(380)
-
-local WallButton = createButton(424)
-
-
---========================================================
--- ТЕКУЩИЙ ПРОФИЛЬ
---========================================================
-
-local function containsName(name, list)
-
-	name = string.lower(name)
-
-	for _, word in ipairs(list) do
-
-		if string.find(name, word, 1, true) then
-
-			return true
-		end
-	end
-
-	return false
+    return getRank(slime.Rarity) >= rarityList[keepIndex].rank
 end
 
-
-local function getProfileName()
-
-	if Settings.AutoWeapon then
-
-		local character = LocalPlayer.Character
-
-		if character then
-
-			local tool = character:FindFirstChildOfClass("Tool")
-
-			if tool then
-
-				if containsName(tool.Name, AWPNames) then
-
-					return "AWP"
-				end
-
-
-				if containsName(tool.Name, PistolNames) then
-
-					return "PISTOL"
-				end
-			end
-		end
-	end
-
-
-	return Settings.CurrentProfile
+local function x100IsActive()
+    local id = tostring(player:GetAttribute("EventSystemActiveId") or player:GetAttribute("ActiveEventId") or "")
+    local luck = tonumber(player:GetAttribute("EventSystemLuckMultiplier") or player:GetAttribute("ActiveEventLuckMultiplier") or 1) or 1
+    return id == EVENT_ID and luck >= 100
 end
 
+local function buyEvent()
+    if not AUTO_EVENT or eventBusy then return end
+    eventBusy = true
 
-local function getProfile()
+    local ok, err = pcall(function()
+        EventShopAction:FireServer("Activate", EVENT_ID)
+    end)
 
-	return Profiles[getProfileName()]
+    if ok then
+        print("[Arc2play] Event Activate sent:", EVENT_ID)
+        nextEventAt = os.clock() + EVENT_DURATION
+    else
+        warn("[Arc2play] Event error:", err)
+        nextEventAt = os.clock() + 5
+    end
+
+    task.wait(1)
+    eventBusy = false
 end
 
+-- Автопокупка: сразу при старте (если x100 не активен), затем каждые 600 сек.
+task.spawn(function()
+    task.wait(1)
 
---========================================================
--- НАЗВАНИЕ БИНДА
---========================================================
+    if x100IsActive() then
+        nextEventAt = os.clock() + EVENT_DURATION
+        print("[Arc2play] x100 уже активен. Следующая покупка через 10 минут.")
+    else
+        buyEvent()
+    end
 
-local function getBindName()
+    while task.wait(1) do
+        if AUTO_EVENT and os.clock() >= nextEventAt then
+            buyEvent()
+        end
+    end
+end)
 
-	if AimMouseButton == Enum.UserInputType.MouseButton1 then
+-- Храним последнюю таблицу инвентаря, которую прислал сервер.
+InventoryUpdate.OnClientEvent:Connect(function(inventory)
+    if type(inventory) == "table" then
+        latestInventory = inventory
+    end
+end)
 
-		return "ЛКМ"
-	end
+local function autoSellNow()
+    if not AUTO_SELL or selling then return end
+    selling = true
 
+    local sellList = {}
 
-	if AimMouseButton == Enum.UserInputType.MouseButton2 then
+    for _, slime in ipairs(latestInventory) do
+        if slime and not shouldKeep(slime) then
+            local index = tonumber(slime.Index or slime.InventoryIndex)
+            if index then
+                table.insert(sellList, index)
+            end
+        end
+    end
 
-		return "ПКМ"
-	end
+    print("[Arc2play] AutoSell:", #sellList, "| KEEP", rarityList[keepIndex].name .. "+")
 
+    for _, index in ipairs(sellList) do
+        if not AUTO_SELL then break end
+        pcall(function()
+            SellSlimeAction:FireServer("Sell", index)
+        end)
+        task.wait(SELL_INTERVAL)
+    end
 
-	if AimMouseButton == Enum.UserInputType.MouseButton3 then
-
-		return "СКМ"
-	end
-
-
-	if AimKeyCode then
-
-		return AimKeyCode.Name
-	end
-
-
-	return "НЕТ"
+    selling = false
 end
 
+-- После последнего SlimeReveal в серии запускаем продажу один раз.
+SlimeReveal.OnClientEvent:Connect(function()
+    if not AUTO_SELL then return end
 
---========================================================
--- ЦВЕТ ПЕРЕКЛЮЧАТЕЛЯ
---========================================================
+    revealGeneration = revealGeneration + 1
+    local generation = revealGeneration
 
-local function setToggleColor(button, value)
+    task.delay(SELL_DEBOUNCE, function()
+        if generation ~= revealGeneration then return end
+        task.wait(0.35) -- ждём свежий InventoryUpdate
+        autoSellNow()
+    end)
+end)
 
-	if value then
+-- ===================== GUI =====================
+local old = CoreGui:FindFirstChild("Arc2playAutoManager")
+if old then old:Destroy() end
 
-		button.BackgroundColor3 =
-			Color3.fromRGB(31, 120, 67)
+local gui = Instance.new("ScreenGui")
+gui.Name = "Arc2playAutoManager"
+gui.ResetOnSpawn = false
+gui.Parent = CoreGui
 
-	else
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(335, 205)
+frame.Position = UDim2.new(0, 20, 0.5, -102)
+frame.BackgroundColor3 = Color3.fromRGB(20,20,24)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.Parent = gui
 
-		button.BackgroundColor3 =
-			Color3.fromRGB(120, 40, 48)
-	end
+local fc = Instance.new("UICorner")
+fc.CornerRadius = UDim.new(0, 11)
+fc.Parent = frame
+
+local title = Instance.new("TextLabel")
+title.BackgroundTransparency = 1
+title.Position = UDim2.fromOffset(14, 8)
+title.Size = UDim2.new(1,-28,0,32)
+title.Font = Enum.Font.GothamBold
+title.Text = "MEGA RAMP FOR SLIME"
+title.TextSize = 15
+title.TextColor3 = Color3.new(1,1,1)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = frame
+
+local function makeRow(y, labelText)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1,-24,0,43)
+    row.Position = UDim2.fromOffset(12,y)
+    row.BackgroundColor3 = Color3.fromRGB(30,31,37)
+    row.BorderSizePixel = 0
+    row.Parent = frame
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0,8)
+    c.Parent = row
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.fromOffset(12,0)
+    label.Size = UDim2.new(1,-100,1,0)
+    label.Font = Enum.Font.GothamMedium
+    label.Text = labelText
+    label.TextSize = 12
+    label.TextColor3 = Color3.fromRGB(240,240,245)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
+    return row, label
 end
 
+local function makeToggle(row, initial, onChange)
+    local state = initial
+    local b = Instance.new("TextButton")
+    b.AnchorPoint = Vector2.new(1,0.5)
+    b.Position = UDim2.new(1,-10,0.5,0)
+    b.Size = UDim2.fromOffset(62,27)
+    b.BorderSizePixel = 0
+    b.AutoButtonColor = false
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 9
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Parent = row
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(1,0)
+    c.Parent = b
 
---========================================================
--- ОБНОВЛЕНИЕ МЕНЮ
---========================================================
+    local function draw()
+        if state then
+            b.BackgroundColor3 = Color3.fromRGB(42,190,85)
+            b.Text = "ВКЛ"
+        else
+            b.BackgroundColor3 = Color3.fromRGB(65,67,76)
+            b.Text = "ВЫКЛ"
+        end
+    end
 
-local function updateMenu()
-
-	local profileName = getProfileName()
-
-	local profile = Profiles[profileName]
-
-
-	AimButton.Text =
-		"AIM: "
-		..
-		(Settings.Enabled and "ВКЛ" or "ВЫКЛ")
-
-
-	ProfileButton.Text =
-		"ПРОФИЛЬ: "
-		..
-		profileName
-
-
-	WeaponButton.Text =
-		profileName
-		..
-		": "
-		..
-		(profile.Enabled and "ВКЛ" or "ВЫКЛ")
-
-
-	TargetButton.Text =
-		"ТОЧКА НАВЕДЕНИЯ: "
-		..
-		(profile.Target == "HEAD" and "ГОЛОВА" or "ТЕЛО")
-
-
-	if WaitingForBind then
-
-		BindButton.Text =
-			"НАЖМИ НОВУЮ КНОПКУ..."
-
-	else
-
-		BindButton.Text =
-			"БИНД: "
-			..
-			getBindName()
-	end
-
-
-	FovButton.Text =
-		"РАДИУС КРУГА: "
-		..
-		profile.FOV
-		..
-		" | ЛКМ +20 / ПКМ -20"
-
-
-	SmoothButton.Text =
-		"СКОРОСТЬ: "
-		..
-		string.format(
-			"%.2f",
-			profile.Smoothness
-		)
-		..
-		" | ЛКМ + / ПКМ -"
-
-
-	CircleButton.Text =
-		"КРУГ: "
-		..
-		(Settings.ShowCircle and "ВКЛ" or "ВЫКЛ")
-
-
-	WallButton.Text =
-		"ПРОВЕРКА СТЕН: "
-		..
-		(Settings.WallCheck and "ВКЛ" or "ВЫКЛ")
-
-
-	setToggleColor(
-		AimButton,
-		Settings.Enabled
-	)
-
-
-	setToggleColor(
-		WeaponButton,
-		profile.Enabled
-	)
-
-
-	setToggleColor(
-		CircleButton,
-		Settings.ShowCircle
-	)
-
-
-	setToggleColor(
-		WallButton,
-		Settings.WallCheck
-	)
+    b.MouseButton1Click:Connect(function()
+        state = not state
+        draw()
+        onChange(state)
+    end)
+    draw()
 end
 
-
-updateMenu()
-
-
---========================================================
--- AIM ВКЛ / ВЫКЛ
---========================================================
-
-AimButton.MouseButton1Click:Connect(function()
-
-	Settings.Enabled =
-		not Settings.Enabled
-
-
-	if not Settings.Enabled then
-
-		AimHeld = false
-
-		LockedPlayer = nil
-	end
-
-
-	updateMenu()
+local eventRow = makeRow(47, "Автособытие Luck x100 / 10 мин")
+makeToggle(eventRow, AUTO_EVENT, function(v)
+    AUTO_EVENT = v
+    if v then nextEventAt = 0 end
 end)
 
-
---========================================================
--- ПИСТОЛЕТ / AWP
---========================================================
-
-ProfileButton.MouseButton1Click:Connect(function()
-
-	if Settings.CurrentProfile == "AWP" then
-
-		Settings.CurrentProfile = "PISTOL"
-
-	else
-
-		Settings.CurrentProfile = "AWP"
-	end
-
-
-	LockedPlayer = nil
-
-	updateMenu()
+local sellRow = makeRow(96, "Автопродажа после фарма")
+makeToggle(sellRow, AUTO_SELL, function(v)
+    AUTO_SELL = v
 end)
 
-
---========================================================
--- AIM ДЛЯ ТЕКУЩЕГО ОРУЖИЯ
---========================================================
-
-WeaponButton.MouseButton1Click:Connect(function()
-
-	local profile = getProfile()
-
-	profile.Enabled =
-		not profile.Enabled
-
-
-	if not profile.Enabled then
-
-		LockedPlayer = nil
-	end
-
-
-	updateMenu()
-end)
-
-
---========================================================
--- ГОЛОВА / ТЕЛО
---========================================================
-
-TargetButton.MouseButton1Click:Connect(function()
-
-	local profile = getProfile()
-
-
-	if profile.Target == "HEAD" then
-
-		profile.Target = "BODY"
-
-	else
-
-		profile.Target = "HEAD"
-	end
-
-
-	updateMenu()
-end)
-
-
---========================================================
--- НОВЫЙ БИНД
---========================================================
-
-BindButton.MouseButton1Click:Connect(function()
-
-	WaitingForBind = true
-
-	updateMenu()
-end)
-
-
---========================================================
--- FOV
---========================================================
-
-FovButton.MouseButton1Click:Connect(function()
-
-	local profile = getProfile()
-
-	profile.FOV =
-		math.clamp(
-			profile.FOV + 20,
-			40,
-			600
-		)
-
-
-	updateMenu()
-end)
-
-
-FovButton.MouseButton2Click:Connect(function()
-
-	local profile = getProfile()
-
-	profile.FOV =
-		math.clamp(
-			profile.FOV - 20,
-			40,
-			600
-		)
-
-
-	updateMenu()
-end)
-
-
---========================================================
--- ПЛАВНОСТЬ
---========================================================
-
-SmoothButton.MouseButton1Click:Connect(function()
-
-	local profile = getProfile()
-
-	profile.Smoothness =
-		math.clamp(
-			profile.Smoothness + 0.05,
-			0.05,
-			1
-		)
-
-
-	updateMenu()
-end)
-
-
-SmoothButton.MouseButton2Click:Connect(function()
-
-	local profile = getProfile()
-
-	profile.Smoothness =
-		math.clamp(
-			profile.Smoothness - 0.05,
-			0.05,
-			1
-		)
-
-
-	updateMenu()
-end)
-
-
---========================================================
--- КРУГ
---========================================================
-
-CircleButton.MouseButton1Click:Connect(function()
-
-	Settings.ShowCircle =
-		not Settings.ShowCircle
-
-
-	updateMenu()
-end)
-
-
---========================================================
--- СТЕНЫ
---========================================================
-
-WallButton.MouseButton1Click:Connect(function()
-
-	Settings.WallCheck =
-		not Settings.WallCheck
-
-
-	updateMenu()
-end)
-
-
---========================================================
--- ПОЛУЧЕНИЕ ЧАСТИ ТЕЛА
---========================================================
-
-local function getAimPart(character)
-
-	local profile = getProfile()
-
-
-	if profile.Target == "HEAD" then
-
-		return character:FindFirstChild("Head", true)
-	end
-
-
-	return
-		character:FindFirstChild("UpperTorso", true)
-
-		or character:FindFirstChild("Torso", true)
-
-		or character:FindFirstChild("HumanoidRootPart", true)
+local rarityRow, rarityLabel = makeRow(145, "Оставлять")
+rarityLabel.Size = UDim2.new(1,-145,1,0)
+
+local rarityButton = Instance.new("TextButton")
+rarityButton.AnchorPoint = Vector2.new(1,0.5)
+rarityButton.Position = UDim2.new(1,-10,0.5,0)
+rarityButton.Size = UDim2.fromOffset(125,27)
+rarityButton.BackgroundColor3 = Color3.fromRGB(92,62,195)
+rarityButton.BorderSizePixel = 0
+rarityButton.Font = Enum.Font.GothamBold
+rarityButton.TextColor3 = Color3.new(1,1,1)
+rarityButton.TextSize = 9
+rarityButton.Parent = rarityRow
+local rc = Instance.new("UICorner")
+rc.CornerRadius = UDim.new(0,7)
+rc.Parent = rarityButton
+
+local function drawRarity()
+    rarityButton.Text = rarityList[keepIndex].name .. "+"
 end
 
-
---========================================================
--- ПРОВЕРКА ЦЕЛИ
---========================================================
-
-local function validPlayer(player)
-
-	if player == LocalPlayer then
-
-		return false
-	end
-
-
-	if Settings.TeamCheck then
-
-		if LocalPlayer.Team
-			and player.Team
-			and LocalPlayer.Team == player.Team then
-
-			return false
-		end
-	end
-
-
-	local character = player.Character
-
-	if not character then
-
-		return false
-	end
-
-
-	local humanoid =
-		character:FindFirstChildOfClass("Humanoid")
-
-
-	if not humanoid then
-
-		return false
-	end
-
-
-	if humanoid.Health <= 0 then
-
-		return false
-	end
-
-
-	if not getAimPart(character) then
-
-		return false
-	end
-
-
-	return true
-end
-
-
---========================================================
--- ПРОВЕРКА СТЕН
---========================================================
-
-local function visibleTarget(character, aimPart)
-
-	if not Settings.WallCheck then
-
-		return true
-	end
-
-
-	local params = RaycastParams.new()
-
-	params.FilterType =
-		Enum.RaycastFilterType.Exclude
-
-
-	if LocalPlayer.Character then
-
-		params.FilterDescendantsInstances = {
-			LocalPlayer.Character
-		}
-	end
-
-
-	local origin =
-		Camera.CFrame.Position
-
-
-	local direction =
-		aimPart.Position
-		-
-		origin
-
-
-	local result =
-		workspace:Raycast(
-			origin,
-			direction,
-			params
-		)
-
-
-	if not result then
-
-		return true
-	end
-
-
-	return
-		result.Instance:IsDescendantOf(
-			character
-		)
-end
-
-
---========================================================
--- НАЙТИ БЛИЖАЙШУЮ ЦЕЛЬ В КРУГЕ
---========================================================
-
-local function findTargetInCircle()
-
-	Camera = workspace.CurrentCamera
-
-
-	if not Camera then
-
-		return nil
-	end
-
-
-	local profile = getProfile()
-
-
-	local viewport =
-		Camera.ViewportSize
-
-
-	local center =
-		Vector2.new(
-			viewport.X / 2,
-			viewport.Y / 2
-		)
-
-
-	local bestPlayer = nil
-
-	local bestScreenDistance =
-		profile.FOV
-
-
-	for _, player in ipairs(
-		Players:GetPlayers()
-	) do
-
-
-		if validPlayer(player) then
-
-			local character =
-				player.Character
-
-
-			local aimPart =
-				getAimPart(character)
-
-
-			if aimPart then
-
-				local worldDistance =
-
-					(
-						aimPart.Position
-						-
-						Camera.CFrame.Position
-					).Magnitude
-
-
-				if worldDistance <=
-					Settings.MaxDistance then
-
-
-					local screenPoint,
-						onScreen =
-
-						Camera:WorldToViewportPoint(
-							aimPart.Position
-						)
-
-
-					if onScreen
-						and screenPoint.Z > 0 then
-
-
-						local position =
-							Vector2.new(
-								screenPoint.X,
-								screenPoint.Y
-							)
-
-
-						local screenDistance =
-							(
-								position
-								-
-								center
-							).Magnitude
-
-
-						if screenDistance <=
-							profile.FOV
-							and
-							screenDistance <
-							bestScreenDistance
-						then
-
-
-							if visibleTarget(
-								character,
-								aimPart
-							) then
-
-
-								bestScreenDistance =
-									screenDistance
-
-
-								bestPlayer =
-									player
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-
-
-	return bestPlayer
-end
-
-
---========================================================
--- ПРОВЕРКА БИНДА
---========================================================
-
-local function isAimBind(input)
-
-	if AimMouseButton then
-
-		return
-			input.UserInputType ==
-			AimMouseButton
-	end
-
-
-	if AimKeyCode then
-
-		return
-			input.KeyCode ==
-			AimKeyCode
-	end
-
-
-	return false
-end
-
-
---========================================================
--- КУРСОР НАХОДИТСЯ НА МЕНЮ?
---========================================================
-
-local function mouseInsideMenu()
-
-	if not Menu.Visible then
-
-		return false
-	end
-
-
-	local mouse =
-		UIS:GetMouseLocation()
-
-
-	local pos =
-		Menu.AbsolutePosition
-
-
-	local size =
-		Menu.AbsoluteSize
-
-
-	return
-
-		mouse.X >= pos.X
-
-		and mouse.X <= pos.X + size.X
-
-		and mouse.Y >= pos.Y
-
-		and mouse.Y <= pos.Y + size.Y
-end
-
-
---========================================================
--- НАЖАТИЕ
---========================================================
-
-UIS.InputBegan:Connect(function(input)
-
-	--====================================================
-	-- НАЗНАЧЕНИЕ НОВОГО БИНДА
-	--====================================================
-
-	if WaitingForBind then
-
-
-		if input.KeyCode ==
-			Enum.KeyCode.Escape then
-
-			WaitingForBind = false
-
-			updateMenu()
-
-			return
-		end
-
-
-		if input.UserInputType ==
-			Enum.UserInputType.Keyboard
-		then
-
-
-			if input.KeyCode ~=
-				Enum.KeyCode.Unknown
-			then
-
-
-				AimKeyCode =
-					input.KeyCode
-
-
-				AimMouseButton = nil
-
-
-				WaitingForBind = false
-
-
-				updateMenu()
-
-
-				return
-			end
-		end
-
-
-		if input.UserInputType ==
-			Enum.UserInputType.MouseButton1
-
-			or input.UserInputType ==
-			Enum.UserInputType.MouseButton2
-
-			or input.UserInputType ==
-			Enum.UserInputType.MouseButton3
-		then
-
-
-			AimMouseButton =
-				input.UserInputType
-
-
-			AimKeyCode = nil
-
-
-			WaitingForBind = false
-
-
-			updateMenu()
-
-
-			return
-		end
-	end
-
-
-	if UIS:GetFocusedTextBox() then
-
-		return
-	end
-
-
-	if isAimBind(input) then
-
-
-		if mouseInsideMenu() then
-
-			return
-		end
-
-
-		local profile = getProfile()
-
-
-		if not Settings.Enabled
-			or not profile.Enabled then
-
-			return
-		end
-
-
-		AimHeld = true
-
-
-		-- Сразу ищем цель внутри круга.
-		LockedPlayer =
-			findTargetInCircle()
-
-
-		if LockedPlayer then
-
-			Status.Text =
-				"ЗАХВАЧЕН: "
-				..
-				LockedPlayer.Name
-
-		else
-
-			Status.Text =
-				"ИЩУ ЦЕЛЬ В КРУГЕ"
-		end
-	end
+rarityButton.MouseButton1Click:Connect(function()
+    keepIndex = keepIndex + 1
+    if keepIndex > #rarityList then keepIndex = 1 end
+    drawRarity()
+    print("[Arc2play] KEEP:", rarityList[keepIndex].name .. "+")
 end)
 
-
---========================================================
--- ОТПУСКАНИЕ
---========================================================
-
-UIS.InputEnded:Connect(function(input)
-
-	if isAimBind(input) then
-
-		AimHeld = false
-
-		LockedPlayer = nil
-
-		Status.Text =
-			"СТАТУС: ОЖИДАНИЕ"
-	end
-end)
-
-
---========================================================
--- INSERT = МЕНЮ
---========================================================
-
-UIS.InputBegan:Connect(function(input)
-
-	if input.KeyCode ==
-		Enum.KeyCode.Insert then
-
-		MenuVisible =
-			not MenuVisible
-
-
-		Menu.Visible =
-			MenuVisible
-	end
-end)
-
-
---========================================================
--- ОСНОВНОЙ AIM
---========================================================
---
--- RenderPriority.Last используется специально:
--- обычная камера Roblox и большинство FPS-камер
--- обновляются раньше, после чего AIM задаёт
--- конечное направление камеры.
---
---========================================================
-
-RunService:BindToRenderStep(
-
-	"ClientAimFinalCamera",
-
-	Enum.RenderPriority.Last.Value,
-
-	function(dt)
-
-
-		Camera =
-			workspace.CurrentCamera
-
-
-		if not Camera then
-
-			return
-		end
-
-
-		local profile =
-			getProfile()
-
-
-		--================================================
-		-- ОБНОВЛЕНИЕ КРУГА
-		--================================================
-
-		local viewport =
-			Camera.ViewportSize
-
-
-		FovCircle.Position =
-			UDim2.fromOffset(
-				viewport.X / 2,
-				viewport.Y / 2
-			)
-
-
-		FovCircle.Size =
-			UDim2.fromOffset(
-				profile.FOV * 2,
-				profile.FOV * 2
-			)
-
-
-		FovCircle.Visible =
-
-			Settings.Enabled
-
-			and Settings.ShowCircle
-
-			and profile.Enabled
-
-
-		--================================================
-		-- БИНД НЕ ЗАЖАТ
-		--================================================
-
-		if not AimHeld then
-
-			return
-		end
-
-
-		if not Settings.Enabled
-			or not profile.Enabled then
-
-			return
-		end
-
-
-		--================================================
-		-- ЕСЛИ ЦЕЛИ НЕТ, ПРОДОЛЖАЕМ ИСКАТЬ
-		--================================================
-		--
-		-- Можно сначала зажать кнопку,
-		-- затем провести кругом по противнику.
-		--
-		--================================================
-
-		if not LockedPlayer then
-
-
-			LockedPlayer =
-				findTargetInCircle()
-
-
-			if not LockedPlayer then
-
-				Status.Text =
-					"ИЩУ ЦЕЛЬ В КРУГЕ"
-
-				return
-			end
-
-
-			Status.Text =
-				"ЗАХВАЧЕН: "
-				..
-				LockedPlayer.Name
-		end
-
-
-		--================================================
-		-- ЦЕЛЬ УМЕРЛА
-		--================================================
-
-		if not validPlayer(
-			LockedPlayer
-		) then
-
-
-			LockedPlayer = nil
-
-
-			Status.Text =
-				"ИЩУ СЛЕДУЮЩУЮ ЦЕЛЬ"
-
-
-			return
-		end
-
-
-		local character =
-			LockedPlayer.Character
-
-
-		local aimPart =
-			getAimPart(character)
-
-
-		if not aimPart then
-
-			LockedPlayer = nil
-
-			return
-		end
-
-
-		--================================================
-		-- ВАЖНО
-		--
-		-- Здесь НЕТ проверки FOV.
-		--
-		-- Поэтому после захвата цель может
-		-- выйти из круга, но AIM продолжит
-		-- держать её, пока ты не отпустишь бинд.
-		--================================================
-
-
-		local cameraPosition =
-			Camera.CFrame.Position
-
-
-		local desiredCamera =
-			CFrame.lookAt(
-				cameraPosition,
-				aimPart.Position
-			)
-
-
-		local smooth =
-			math.clamp(
-				profile.Smoothness,
-				0.01,
-				1
-			)
-
-
-		local alpha =
-			1
-			-
-			math.pow(
-				1 - smooth,
-				dt * 60
-			)
-
-
-		Camera.CFrame =
-			Camera.CFrame:Lerp(
-				desiredCamera,
-				alpha
-			)
-
-
-		Status.Text =
-			"ДЕРЖУ: "
-			..
-			LockedPlayer.Name
-			..
-			" → "
-			..
-			(
-				profile.Target == "HEAD"
-				and "ГОЛОВА"
-				or "ТЕЛО"
-			)
-	end
-)
-
-
---========================================================
--- ИГРОК ВЫШЕЛ
---========================================================
-
-Players.PlayerRemoving:Connect(function(player)
-
-	if LockedPlayer == player then
-
-		LockedPlayer = nil
-	end
-end)
-
-
-print(
-	"[AIM] Клиентская система AIM загружена."
-)
+drawRarity()
+print("[Arc2play] Auto Event + Auto Sell loaded")
