@@ -39,6 +39,7 @@ local KEEP_EQUIPPED = true
 
 local SELL_AFTER_REVEAL = 2.35
 local SELL_INTERVAL = 0.18
+local AUTO_SELL_EVERY = 3 -- каждые 3 секунды
 local BUY_RETRY = 5
 local STATE_REFRESH = 8
 
@@ -292,6 +293,62 @@ local function getCurrentInventory()
 end
 
 -- =========================================================
+-- AUTO CLOSE SELL WINDOW
+-- После автопродажи нажимаем штатную кнопку X окна продажи.
+-- Это важно: штатный обработчик не только скрывает окно,
+-- но и обновляет блокировку движения/горячую панель.
+-- =========================================================
+
+local function closeSellWindow()
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then
+        return false
+    end
+
+    local mainGameUI = playerGui:FindFirstChild("MainGameUI")
+    if not mainGameUI then
+        return false
+    end
+
+    local sellFrame = mainGameUI:FindFirstChild("SellSlimeFrame")
+    if not sellFrame or not sellFrame.Visible then
+        return false
+    end
+
+    local closeButton = sellFrame:FindFirstChild("Close")
+
+    if closeButton and type(getconnections) == "function" then
+        -- Сначала пробуем штатный Activated, как обычное нажатие X.
+        for _, signal in ipairs({
+            closeButton.Activated,
+            closeButton.MouseButton1Click
+        }) do
+            local ok, connections = pcall(getconnections, signal)
+
+            if ok and type(connections) == "table" then
+                for _, connection in ipairs(connections) do
+                    local fn = connection.Function
+
+                    if type(fn) == "function" then
+                        local callOk = pcall(fn)
+
+                        if callOk then
+                            log("Окно продажи закрыто штатной кнопкой X")
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Fallback для Xeno, если Function у connection недоступен.
+    sellFrame.Visible = false
+    log("Окно продажи скрыто напрямую")
+    return true
+end
+
+-- =========================================================
 -- AUTO SELL
 -- =========================================================
 
@@ -348,6 +405,10 @@ local function autoSellNow()
             "Нечего продавать | отмечено оставить: " ..
             tostring(keptRarityCount())
         )
+
+        task.wait(0.20)
+        closeSellWindow()
+
         selling = false
         return
     end
@@ -383,27 +444,38 @@ local function autoSellNow()
         " | отмечено оставить: " .. tostring(keptRarityCount())
     )
 
+    -- После продажи автоматически закрываем окно "Продать слаймов".
+    task.wait(0.25)
+    closeSellWindow()
+
     selling = false
 end
 
--- One sell pass after the LAST reveal in a rapid series.
-SlimeReveal.OnClientEvent:Connect(function()
-    if not AUTO_SELL then
-        return
-    end
+-- Автопродажа строго каждые 20 секунд.
+-- Работает только когда переключатель "Автопродажа после фарма" = ВКЛ.
+task.spawn(function()
+    while task.wait(1) do
+        if AUTO_SELL then
+            local remaining = AUTO_SELL_EVERY
 
-    revealGeneration = revealGeneration + 1
-    local myGeneration = revealGeneration
+            while AUTO_SELL and remaining > 0 do
+                setSellStatus(
+                    "Следующая автопродажа через " ..
+                    tostring(remaining) .. " сек"
+                )
 
-    setSellStatus("Получен слайм — ждём обновление...")
+                task.wait(1)
+                remaining = remaining - 1
+            end
 
-    task.delay(SELL_AFTER_REVEAL, function()
-        if myGeneration ~= revealGeneration then
-            return
+            if AUTO_SELL then
+                setSellStatus("Автопродажа запускается...")
+                autoSellNow()
+            end
+        else
+            task.wait(0.5)
         end
-
-        autoSellNow()
-    end)
+    end
 end)
 
 -- =========================================================
@@ -585,7 +657,7 @@ for _, name in ipairs({
     "Arc2playAutoManager",
     "Arc2playAutoManagerV2",
     "Arc2playAutoManagerV3",
-    "Arc2playAutoManagerV5",
+    "Arc2playAutoManagerV8",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -594,7 +666,7 @@ for _, name in ipairs({
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "Arc2playAutoManagerV5"
+gui.Name = "Arc2playAutoManagerV8"
 gui.ResetOnSpawn = false
 gui.Parent = guiParent
 
@@ -616,7 +688,7 @@ title.BackgroundTransparency = 1
 title.Position = UDim2.fromOffset(14, 8)
 title.Size = UDim2.new(1, -28, 0, 30)
 title.Font = Enum.Font.GothamBold
-title.Text = "MEGA RAMP FOR SLIME • AUTO V5"
+title.Text = "MEGA RAMP FOR SLIME • AUTO V8"
 title.TextSize = 15
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -846,7 +918,7 @@ sellNow.MouseButton1Click:Connect(function()
     task.spawn(autoSellNow)
 end)
 
-log("Loaded V5.")
+log("Loaded V8.")
 log("Event:", EVENT_ID)
 log("AutoEvent:", AUTO_EVENT, "AutoSell:", AUTO_SELL)
 log("VIP protection:", KEEP_VIP)
