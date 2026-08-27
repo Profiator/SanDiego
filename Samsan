@@ -39,7 +39,7 @@ local KEEP_EQUIPPED = true
 
 local SELL_AFTER_REVEAL = 2.35
 local SELL_INTERVAL = 0.18
-local AUTO_SELL_EVERY = 3 -- каждые 3 секунды
+local AUTO_SELL_EVERY = 20 -- каждые 20 секунд
 local BUY_RETRY = 5
 local STATE_REFRESH = 8
 
@@ -406,7 +406,6 @@ local function autoSellNow()
             tostring(keptRarityCount())
         )
 
-        task.wait(0.20)
         closeSellWindow()
 
         selling = false
@@ -444,8 +443,7 @@ local function autoSellNow()
         " | отмечено оставить: " .. tostring(keptRarityCount())
     )
 
-    -- После продажи автоматически закрываем окно "Продать слаймов".
-    task.wait(0.25)
+    -- Сразу после продажи закрываем окно "Продать слаймов".
     closeSellWindow()
 
     selling = false
@@ -657,7 +655,7 @@ for _, name in ipairs({
     "Arc2playAutoManager",
     "Arc2playAutoManagerV2",
     "Arc2playAutoManagerV3",
-    "Arc2playAutoManagerV8",
+    "Arc2playAutoManagerV9",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -666,7 +664,7 @@ for _, name in ipairs({
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "Arc2playAutoManagerV8"
+gui.Name = "Arc2playAutoManagerV9"
 gui.ResetOnSpawn = false
 gui.Parent = guiParent
 
@@ -688,7 +686,7 @@ title.BackgroundTransparency = 1
 title.Position = UDim2.fromOffset(14, 8)
 title.Size = UDim2.new(1, -28, 0, 30)
 title.Font = Enum.Font.GothamBold
-title.Text = "MEGA RAMP FOR SLIME • AUTO V8"
+title.Text = "MEGA RAMP FOR SLIME • AUTO V9"
 title.TextSize = 15
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -918,7 +916,7 @@ sellNow.MouseButton1Click:Connect(function()
     task.spawn(autoSellNow)
 end)
 
-log("Loaded V8.")
+log("Loaded V9.")
 log("Event:", EVENT_ID)
 log("AutoEvent:", AUTO_EVENT, "AutoSell:", AUTO_SELL)
 log("VIP protection:", KEEP_VIP)
