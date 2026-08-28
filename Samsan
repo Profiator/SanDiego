@@ -4,7 +4,7 @@ ARC2PLAY AUTO MANAGER V2
 
     FIXES:
     - Uses the REAL existing event:
-      SATURN_LUCK_3X_RAINBOW_FOUR_LEAF_CLOVER_MILLIONAIRE
+      MAGIC_LUCK_3X_RAINBOW_FOUR_LEAF_CLOVER_MILLIONAIRE
     - Renews from the server EventSystemEndsAt timestamp.
     - Reads the game's CURRENT inventory from the InventoryUpdate connection
       when Xeno exposes getconnections/debug.getupvalue.
@@ -28,7 +28,7 @@ local SellSlimeAction = remotes:WaitForChild("SellSlimeAction")
 -- REAL EVENT FROM EventConfig
 -- =========================================================
 
-local EVENT_ID = "SATURN_LUCK_3X_RAINBOW_FOUR_LEAF_CLOVER_MILLIONAIRE"
+local EVENT_ID = "MAGIC_LUCK_3X_RAINBOW_FOUR_LEAF_CLOVER_MILLIONAIRE"
 
 local AUTO_EVENT = false
 local AUTO_SELL = false
@@ -542,7 +542,7 @@ local function tryBuyEvent(force)
     task.wait(0.25)
 
     if targetEventActive() then
-        setEventStatus("SATURN x3 активно: " .. formatTime(remainingSeconds()))
+        setEventStatus("MAGIC x3 активно: " .. formatTime(remainingSeconds()))
         return
     end
 
@@ -557,7 +557,7 @@ local function tryBuyEvent(force)
     eventBusy = true
     lastBuyAttempt = os.clock()
 
-    setEventStatus("Покупаем SATURN LUCK x3...")
+    setEventStatus("Покупаем MAGIC LUCK x3...")
     log("ACTIVATE", EVENT_ID)
 
     local ok, err = pcall(function()
@@ -595,7 +595,7 @@ end
 -- Refresh status whenever server updates relevant attributes.
 local function eventAttributeChanged()
     if targetEventActive() then
-        setEventStatus("SATURN x3 активно: " .. formatTime(remainingSeconds()))
+        setEventStatus("MAGIC x3 активно: " .. formatTime(remainingSeconds()))
     end
 end
 
@@ -620,7 +620,7 @@ task.spawn(function()
 
             if targetEventActive() then
                 setEventStatus(
-                    "SATURN x3 активно: " ..
+                    "MAGIC x3 активно: " ..
                     formatTime(remainingSeconds())
                 )
             elseif anyEventActive() then
@@ -655,7 +655,7 @@ for _, name in ipairs({
     "Arc2playAutoManager",
     "Arc2playAutoManagerV2",
     "Arc2playAutoManagerV3",
-    "Arc2playAutoManagerV9",
+    "Arc2playAutoManagerV10",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -664,7 +664,7 @@ for _, name in ipairs({
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "Arc2playAutoManagerV9"
+gui.Name = "Arc2playAutoManagerV10"
 gui.ResetOnSpawn = false
 gui.Parent = guiParent
 
@@ -686,7 +686,7 @@ title.BackgroundTransparency = 1
 title.Position = UDim2.fromOffset(14, 8)
 title.Size = UDim2.new(1, -28, 0, 30)
 title.Font = Enum.Font.GothamBold
-title.Text = "MEGA RAMP FOR SLIME • AUTO V9"
+title.Text = "MEGA RAMP FOR SLIME • AUTO V10"
 title.TextSize = 15
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -755,7 +755,7 @@ local function makeToggle(row, initial, onChange)
     draw()
 end
 
-local eventRow = makeRow(44, "SATURN LUCK x3 • автопокупка")
+local eventRow = makeRow(44, "MAGIC LUCK x3 • автопокупка")
 makeToggle(eventRow, AUTO_EVENT, function(v)
     AUTO_EVENT = v
 
@@ -916,7 +916,7 @@ sellNow.MouseButton1Click:Connect(function()
     task.spawn(autoSellNow)
 end)
 
-log("Loaded V9.")
+log("Loaded V10.")
 log("Event:", EVENT_ID)
 log("AutoEvent:", AUTO_EVENT, "AutoSell:", AUTO_SELL)
 log("VIP protection:", KEEP_VIP)
