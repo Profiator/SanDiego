@@ -1,13 +1,13 @@
 --[[
-    MEGA RAMP FOR SLIME • MASTER V3
+    MEGA RAMP FOR SLIME • MASTER V4
 
     ВАЖНО:
     • Старый AutoFarm НЕ встроен и НЕ изменён.
     • Загружается напрямую с GitHub:
       https://raw.githubusercontent.com/Profiator/Scripts/main/MEGARAMPFORSLIME
-    • Его старое Tora-окно остаётся как есть.
-    • Кнопки AutoFarm / Equip Best в MASTER нажимают РОДНЫЕ
-      кнопки старого меню через VirtualInputManager.
+    • Старое Tora-окно используется только как невидимый движок.
+    • MASTER сохраняет родные callbacks AutoFarm / Equip Best
+      и вызывает их напрямую, без показа старого окна.
     • Все переключатели при запуске ВЫКЛ, включая VIP.
 ]]
 
@@ -750,12 +750,21 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- ORIGINAL MENU REMOTE CONTROL
--- Старое Tora-меню НЕ скрываем, НЕ уничтожаем и НЕ изменяем.
--- MASTER только физически нажимает его родные кнопки.
+-- ORIGINAL MENU CALLBACK BRIDGE
+-- Старое окно загружается только как "движок":
+-- 1) находим его родные кнопки;
+-- 2) сохраняем их callbacks;
+-- 3) сразу скрываем старое окно;
+-- 4) MASTER вызывает сохранённые callbacks напрямую.
 -- =========================================================
 
-local VirtualInputManager = game:GetService("VirtualInputManager")
+local originalCallbacks = {
+    AutoFarm = {},
+    EquipBest = {},
+}
+
+local originalGuiRoot = nil
+local originalBound = false
 
 local function getGuiSearchRoots()
     local roots, seen = {}, {}
@@ -778,184 +787,228 @@ local function getGuiSearchRoots()
     return roots
 end
 
-local function textEqualsAny(obj, variants)
-    if not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then
-        return false
-    end
-
-    local text = string.lower(tostring(obj.Text or ""))
-
-    for _, wanted in ipairs(variants) do
-        if text == string.lower(wanted) then
+local function isInsideMaster(obj)
+    local p = obj
+    while p do
+        if p.Name == "Arc2playMasterV4" then
             return true
         end
+        p = p.Parent
     end
-
     return false
 end
 
-local function findOldLabel(variants)
+local function textEquals(obj, wanted)
+    if not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then
+        return false
+    end
+    return string.lower(tostring(obj.Text or "")) == string.lower(wanted)
+end
+
+local function findLabel(wanted)
     for _, root in ipairs(getGuiSearchRoots()) do
         for _, obj in ipairs(root:GetDescendants()) do
-            if textEqualsAny(obj, variants) then
-                -- Не ловим элементы самого MASTER.
-                local p = obj
-                local insideMaster = false
-
-                while p do
-                    if p.Name == "Arc2playMasterV3" then
-                        insideMaster = true
-                        break
-                    end
-                    p = p.Parent
-                end
-
-                if not insideMaster then
-                    return obj
-                end
+            if not isInsideMaster(obj) and textEquals(obj, wanted) then
+                return obj
             end
         end
     end
-
     return nil
 end
 
-local function chooseOldToggleButton(label)
+local function findScreenRoot(obj)
+    local p = obj
+    local best = obj
+
+    while p do
+        best = p
+        if p:IsA("ScreenGui") then
+            return p
+        end
+        p = p.Parent
+    end
+
+    return best
+end
+
+local function nearestButtonToLabel(label)
     if not label then return nil end
     if label:IsA("GuiButton") then return label end
 
-    local labelCenterY =
-        label.AbsolutePosition.Y + label.AbsoluteSize.Y / 2
-    local labelRight =
-        label.AbsolutePosition.X + label.AbsoluteSize.X
-
-    -- Сначала ищем кнопку внутри ближайших родителей строки.
-    local ancestor = label.Parent
-
+    local container = label.Parent
     for _ = 1, 5 do
-        if not ancestor then break end
+        if not container then break end
 
-        local candidates = {}
+        local labelY = label.AbsolutePosition.Y + label.AbsoluteSize.Y / 2
+        local labelRight = label.AbsolutePosition.X + label.AbsoluteSize.X
+        local best, bestScore = nil, math.huge
 
-        for _, obj in ipairs(ancestor:GetDescendants()) do
-            if obj:IsA("GuiButton") and obj.Visible then
+        for _, obj in ipairs(container:GetDescendants()) do
+            if obj:IsA("GuiButton") and not isInsideMaster(obj) then
                 local cy = obj.AbsolutePosition.Y + obj.AbsoluteSize.Y / 2
                 local cx = obj.AbsolutePosition.X + obj.AbsoluteSize.X / 2
-                local dy = math.abs(cy - labelCenterY)
+                local dy = math.abs(cy - labelY)
 
-                if dy <= 28 and cx >= labelRight - 10 then
-                    table.insert(candidates, obj)
+                -- toggle old Tora UI is to the right of the label
+                if dy <= 30 and cx >= labelRight - 10 then
+                    local score = dy * 10 + math.abs(cx - labelRight)
+                    if score < bestScore then
+                        best = obj
+                        bestScore = score
+                    end
                 end
             end
         end
 
-        if #candidates > 0 then
-            table.sort(candidates, function(a, b)
-                local ax = a.AbsolutePosition.X + a.AbsoluteSize.X / 2
-                local bx = b.AbsolutePosition.X + b.AbsoluteSize.X / 2
-                local ay = a.AbsolutePosition.Y + a.AbsoluteSize.Y / 2
-                local by = b.AbsolutePosition.Y + b.AbsoluteSize.Y / 2
-
-                local ad =
-                    math.abs(ay - labelCenterY) * 5 +
-                    math.abs(ax - labelRight)
-                local bd =
-                    math.abs(by - labelCenterY) * 5 +
-                    math.abs(bx - labelRight)
-
-                return ad < bd
-            end)
-
-            return candidates[1]
-        end
-
-        ancestor = ancestor.Parent
+        if best then return best end
+        container = container.Parent
     end
 
     return nil
 end
 
-local function physicalClick(button)
-    if not button or not button.Parent then
-        return false, "old button not found"
+local function collectCallbacks(button)
+    local callbacks = {}
+
+    if not button or type(getconnections) ~= "function" then
+        return callbacks
     end
 
-    local pos = button.AbsolutePosition
-    local size = button.AbsoluteSize
-    local x = math.floor(pos.X + size.X / 2)
-    local y = math.floor(pos.Y + size.Y / 2)
+    for _, signal in ipairs({
+        button.MouseButton1Click,
+        button.Activated,
+        button.MouseButton1Down,
+    }) do
+        local ok, connections = pcall(getconnections, signal)
 
-    -- Основной вариант: настоящий GUI-клик.
-    local ok = pcall(function()
-        VirtualInputManager:SendMouseButtonEvent(
-            x, y, 0, true, game, 0
-        )
-        task.wait(0.05)
-        VirtualInputManager:SendMouseButtonEvent(
-            x, y, 0, false, game, 0
-        )
-    end)
-
-    if ok then
-        return true
-    end
-
-    -- Fallback для Xeno: вызвать connections оригинальной кнопки.
-    if type(getconnections) == "function" then
-        for _, signal in ipairs({
-            button.MouseButton1Click,
-            button.Activated
-        }) do
-            local good, connections = pcall(getconnections, signal)
-
-            if good and type(connections) == "table" then
-                for _, connection in ipairs(connections) do
-                    if type(connection.Function) == "function" then
-                        local fired = pcall(connection.Function)
-                        if fired then return true end
-                    elseif type(connection.Fire) == "function" then
-                        local fired = pcall(function()
+        if ok and type(connections) == "table" then
+            for _, connection in ipairs(connections) do
+                if type(connection.Function) == "function" then
+                    table.insert(callbacks, function()
+                        return pcall(connection.Function)
+                    end)
+                elseif type(connection.Fire) == "function" then
+                    table.insert(callbacks, function()
+                        return pcall(function()
                             connection:Fire()
                         end)
-                        if fired then return true end
-                    end
+                    end)
                 end
             end
         end
     end
 
-    return false, "could not click original button"
+    return callbacks
 end
 
-local function clickOldControl(kind)
-    local variants
+local function hideOriginalGui()
+    if not originalGuiRoot or not originalGuiRoot.Parent then
+        return
+    end
 
-    if kind == "AutoFarm" then
-        variants = {
-            "Instant LastZone",
-            "Автофарм последней зоны",
-        }
+    if originalGuiRoot:IsA("ScreenGui") then
+        originalGuiRoot.Enabled = false
+    elseif originalGuiRoot:IsA("GuiObject") then
+        originalGuiRoot.Visible = false
     else
-        variants = {
-            "Equip Best",
-            "Надеть лучшее",
-        }
-    end
-
-    -- Старый GUI иногда появляется не мгновенно.
-    for _ = 1, 30 do
-        local label = findOldLabel(variants)
-        local button = chooseOldToggleButton(label)
-
-        if button then
-            return physicalClick(button)
+        for _, obj in ipairs(originalGuiRoot:GetChildren()) do
+            if obj:IsA("ScreenGui") then
+                obj.Enabled = false
+            elseif obj:IsA("GuiObject") then
+                obj.Visible = false
+            end
         end
+    end
+end
 
-        task.wait(0.10)
+local function bindOriginalMenu()
+    if originalBound then
+        hideOriginalGui()
+        return true
     end
 
-    return false, "old menu/control not found"
+    local farmLabel = findLabel("Instant LastZone")
+    local equipLabel = findLabel("Equip Best")
+
+    if not farmLabel or not equipLabel then
+        return false
+    end
+
+    local farmButton = nearestButtonToLabel(farmLabel)
+    local equipButton = nearestButtonToLabel(equipLabel)
+
+    if not farmButton or not equipButton then
+        return false
+    end
+
+    local farmCallbacks = collectCallbacks(farmButton)
+    local equipCallbacks = collectCallbacks(equipButton)
+
+    if #farmCallbacks == 0 or #equipCallbacks == 0 then
+        return false
+    end
+
+    originalCallbacks.AutoFarm = farmCallbacks
+    originalCallbacks.EquipBest = equipCallbacks
+    originalGuiRoot = findScreenRoot(farmLabel)
+    originalBound = true
+
+    -- После того как callbacks сохранены, старое окно больше не нужно показывать.
+    hideOriginalGui()
+
+    log(
+        "Original callbacks bound:",
+        "AutoFarm =", #farmCallbacks,
+        "EquipBest =", #equipCallbacks
+    )
+
+    return true
 end
+
+local function invokeOldControl(kind)
+    if not originalBound then
+        for _ = 1, 50 do
+            if bindOriginalMenu() then
+                break
+            end
+            task.wait(0.05)
+        end
+    end
+
+    local callbacks = originalCallbacks[kind]
+
+    if type(callbacks) ~= "table" or #callbacks == 0 then
+        return false, "original callback not found"
+    end
+
+    local fired = false
+
+    for _, callback in ipairs(callbacks) do
+        local ok, result = pcall(callback)
+        if ok and result ~= false then
+            fired = true
+        end
+    end
+
+    hideOriginalGui()
+
+    if fired then
+        return true
+    end
+
+    return false, "original callback failed"
+end
+
+-- Максимально быстро ловим старое окно после загрузки GitHub-скрипта.
+task.spawn(function()
+    while task.wait(0.02) do
+        if not originalBound then
+            bindOriginalMenu()
+        else
+            hideOriginalGui()
+        end
+    end
+end)
 
 -- =========================================================
 -- GUI
@@ -983,14 +1036,14 @@ for _, name in ipairs({
     "Arc2playAutoManagerV10",
     "Arc2playAllInOneV1",
     "Arc2playAllInOneV2",
-    "Arc2playMasterV3",
+    "Arc2playMasterV4",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then old:Destroy() end
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "Arc2playMasterV3"
+gui.Name = "Arc2playMasterV4"
 gui.ResetOnSpawn = false
 gui.Parent = guiParent
 
@@ -1124,7 +1177,7 @@ end
 local autoFarmRow, autoFarmLabel = makeRow(93, T("autoFarm"))
 makeToggle(autoFarmRow, false, function(v)
     task.spawn(function()
-        local ok, err = clickOldControl("AutoFarm")
+        local ok, err = invokeOldControl("AutoFarm")
         if ok then
             setSellStatus(
                 v and "Автофарм последней зоны: ВКЛ"
@@ -1139,7 +1192,7 @@ end)
 local equipBestRow, equipBestLabel = makeRow(142, T("equipBest"))
 makeToggle(equipBestRow, false, function(v)
     task.spawn(function()
-        local ok, err = clickOldControl("EquipBest")
+        local ok, err = invokeOldControl("EquipBest")
         if ok then
             setSellStatus(
                 v and "Надеть лучшее: ВКЛ"
@@ -1366,14 +1419,14 @@ end)
 
 refreshLanguage()
 
-log("Loaded MASTER V3.")
+log("Loaded MASTER V4.")
 log("Event:", EVENT_ID)
 log("AutoEvent:", AUTO_EVENT, "AutoSell:", AUTO_SELL)
 log("VIP protection:", KEEP_VIP)
 log("Checked rarities to keep:", keptRarityCount())
 ]========]
 
-task.delay(1.0, function()
+task.delay(0.10, function()
     local fn, err = loadstring(MASTER_SOURCE)
 
     if not fn then
