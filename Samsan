@@ -1,19 +1,19 @@
 --[[
-    MEGA RAMP FOR SLIME • ALL-IN-ONE V1
+    MEGA RAMP FOR SLIME • ALL-IN-ONE V2
 
-    ЕДИНОЕ МЕНЮ:
-      • Автофарм последней зоны
-      • Надеть лучшее
-      • MAGIC LUCK x3 автопокупка
-      • Автопродажа каждые 20 секунд
-      • VIP-защита
-      • Фильтр редкостей
-      • Купить/проверить
-      • Продать сейчас
+    ОДИН ФАЙЛ + ОДНО ВИДИМОЕ МЕНЮ.
 
-    Рабочая логика оригинального AutoFarm НЕ переписана:
-    его родные Tora callbacks используются через bridge.
-    Само старое маленькое Tora-окно скрывается.
+    Внутри:
+      • оригинальный рабочий AutoFarm / Equip Best
+      • MAGIC LUCK x3 auto-buy
+      • Auto Sell каждые 20 секунд
+      • мгновенное закрытие окна продажи
+      • VIP protection
+      • фильтр редкостей
+      • RU / EN переключатель языка
+
+    Старое маленькое меню AutoFarm используется только как
+    внутренний источник рабочих callbacks и скрывается.
 ]]
 
 local function runModule(name, source)
@@ -29,10 +29,10 @@ local function runModule(name, source)
 
         local ok, err = pcall(fnOrErr)
 
-        if ok then
-            print("[MEGA RAMP ALL-IN-ONE] " .. name .. " loaded")
-        else
+        if not ok then
             warn("[MEGA RAMP ALL-IN-ONE] " .. name .. " runtime error:", err)
+        else
+            print("[MEGA RAMP ALL-IN-ONE] " .. name .. " loaded")
         end
     end)
 end
@@ -187,15 +187,15 @@ local STATE_REFRESH = 8
 -- =========================================================
 
 local rarityList = {
-    {key="COMMON",    ru="Обычный"},
-    {key="UNCOMMON",  ru="Необычный"},
-    {key="RARE",      ru="Редкий"},
-    {key="EPIC",      ru="Эпический"},
-    {key="LEGENDARY", ru="Легендарный"},
-    {key="MYTHIC",    ru="Мифический"},
-    {key="SECRET",    ru="Секретный"},
-    {key="DIVINE",    ru="Божественный"},
-    {key="LIMITED",   ru="Лимитированный"},
+    {key="COMMON",    ru="Обычный",        en="Common"},
+    {key="UNCOMMON",  ru="Необычный",      en="Uncommon"},
+    {key="RARE",      ru="Редкий",         en="Rare"},
+    {key="EPIC",      ru="Эпический",      en="Epic"},
+    {key="LEGENDARY", ru="Легендарный",    en="Legendary"},
+    {key="MYTHIC",    ru="Мифический",      en="Mythic"},
+    {key="SECRET",    ru="Секретный",       en="Secret"},
+    {key="DIVINE",    ru="Божественный",    en="Divine"},
+    {key="LIMITED",   ru="Лимитированный",  en="Limited"},
 }
 
 -- По умолчанию оставляем Mythic и выше.
@@ -280,20 +280,113 @@ local rarityButtons = {}
 -- =========================================================
 
 local function log(...)
-    print("[Arc2play V2]", ...)
+    print("[Arc2play ALL-IN-ONE]", ...)
 end
+
+-- =========================================================
+-- LANGUAGE / ЯЗЫК
+-- =========================================================
+
+local LANGUAGE = "RU"
+
+local staticText = {
+    RU = {
+        title = "MEGA RAMP FOR SLIME • ВСЁ В ОДНОМ",
+        language = "Язык интерфейса",
+        autoFarm = "Автофарм последней зоны",
+        equipBest = "Надеть лучшее",
+        autoEvent = "MAGIC LUCK x3 • автопокупка",
+        autoSell = "Автопродажа каждые 20 секунд",
+        keepVIP = "Всегда оставлять VIP-слаймов",
+        keepTitle = "ЧТО ОСТАВЛЯТЬ  •  ✓ = оставить, пусто = продать",
+        buyNow = "КУПИТЬ / ПРОВЕРИТЬ",
+        sellNow = "ПРОДАТЬ СЕЙЧАС",
+        on = "ВКЛ",
+        off = "ВЫКЛ",
+    },
+
+    EN = {
+        title = "MEGA RAMP FOR SLIME • ALL-IN-ONE",
+        language = "Interface language",
+        autoFarm = "Auto Farm Last Zone",
+        equipBest = "Equip Best",
+        autoEvent = "MAGIC LUCK x3 • auto-buy",
+        autoSell = "Auto-sell every 20 seconds",
+        keepVIP = "Always keep VIP slimes",
+        keepTitle = "WHAT TO KEEP  •  ✓ = keep, empty = sell",
+        buyNow = "BUY / CHECK",
+        sellNow = "SELL NOW",
+        on = "ON",
+        off = "OFF",
+    }
+}
+
+local function S(key)
+    local lang = staticText[LANGUAGE] or staticText.RU
+    return lang[key] or key
+end
+
+local function translateDynamic(text)
+    text = tostring(text or "")
+
+    if LANGUAGE ~= "EN" then
+        return text
+    end
+
+    local exact = {
+        ["Инициализация..."] = "Initializing...",
+        ["Ждём первый инвентарь..."] = "Waiting for inventory...",
+        ["Автопродажа выключена"] = "Auto-sell disabled",
+        ["Автопродажа включена"] = "Auto-sell enabled",
+        ["Автопродажа запускается..."] = "Auto-sell starting...",
+        ["Автопокупка выключена"] = "Auto-buy disabled",
+        ["Покупаем MAGIC LUCK x3..."] = "Buying MAGIC LUCK x3...",
+        ["Ошибка отправки Activate"] = "Activate request error",
+        ["VIP-защита ВКЛ: VIP не продаём"] = "VIP protection ON: keep VIP",
+        ["VIP-защита ВЫКЛ: VIP по редкости"] = "VIP protection OFF: VIP by rarity",
+    }
+
+    if exact[text] then
+        return exact[text]
+    end
+
+    text = text:gsub("MAGIC x3 активно:", "MAGIC x3 active:")
+    text = text:gsub("Ждём другое событие:", "Waiting for another event:")
+    text = text:gsub("КУПЛЕНО", "BOUGHT")
+    text = text:gsub("Не купилось — повтор через", "Purchase failed — retry in")
+    text = text:gsub("Следующая автопродажа через", "Next auto-sell in")
+    text = text:gsub(" сек", " sec")
+    text = text:gsub("Инвентарь:", "Inventory:")
+    text = text:gsub("Нечего продавать", "Nothing to sell")
+    text = text:gsub("Продаём:", "Selling:")
+    text = text:gsub("Продано запросов:", "Sell requests:")
+    text = text:gsub("отмечено оставить:", "keep selected:")
+    text = text:gsub(" шт%.", " items")
+    text = text:gsub("ОСТАВЛЯЕМ", "KEEP")
+    text = text:gsub("БУДЕМ ПРОДАВАТЬ", "SELL")
+    text = text:gsub("Автофарм последней зоны:", "Auto Farm Last Zone:")
+    text = text:gsub("Надеть лучшее:", "Equip Best:")
+    text = text:gsub("ВКЛ", "ON")
+    text = text:gsub("ВЫКЛ", "OFF")
+    text = text:gsub("Ошибка AutoFarm:", "AutoFarm error:")
+    text = text:gsub("Ошибка Equip Best:", "Equip Best error:")
+
+    return text
+end
+
+local languageRefresh
 
 local function setEventStatus(text)
     statusEventText = tostring(text)
     if eventStatusLabel then
-        eventStatusLabel.Text = statusEventText
+        eventStatusLabel.Text = translateDynamic(statusEventText)
     end
 end
 
 local function setSellStatus(text)
     statusSellText = tostring(text)
     if sellStatusLabel then
-        sellStatusLabel.Text = statusSellText
+        sellStatusLabel.Text = translateDynamic(statusSellText)
     end
 end
 
@@ -777,8 +870,9 @@ end)
 
 -- =========================================================
 -- ORIGINAL AUTOFARM GUI BRIDGE
--- Используем РОДНЫЕ callbacks из рабочего Tora GUI, но само
--- старое окно скрываем. Кнопки управления будут в одном меню.
+-- Ищем старое меню НЕ по имени, а по текстам Instant LastZone
+-- + Equip Best во всех возможных GUI-контейнерах.
+-- После получения callbacks старое окно скрывается навсегда.
 -- =========================================================
 
 local originalControls = {
@@ -786,46 +880,103 @@ local originalControls = {
     EquipBest = nil,
 }
 
-local originalToraGui = nil
+local originalGuiRoot = nil
 
-local function textMatches(obj, variants)
+local function collectGuiRoots()
+    local roots = {}
+    local seen = {}
+
+    local function add(root)
+        if root and not seen[root] then
+            seen[root] = true
+            table.insert(roots, root)
+        end
+    end
+
+    add(CoreGui)
+    add(player:FindFirstChildOfClass("PlayerGui"))
+
+    if type(gethui) == "function" then
+        local ok, hui = pcall(gethui)
+        if ok then
+            add(hui)
+        end
+    end
+
+    return roots
+end
+
+local function objectHasText(obj, wanted)
     if not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then
         return false
     end
 
     local text = string.lower(tostring(obj.Text or ""))
+    return string.find(text, string.lower(wanted), 1, true) ~= nil
+end
 
-    for _, variant in ipairs(variants) do
-        if string.find(text, string.lower(variant), 1, true) then
-            return true
+local function getContainerFor(obj, searchRoot)
+    local current = obj
+
+    while current and current.Parent and current.Parent ~= searchRoot do
+        if current:IsA("ScreenGui") then
+            return current
+        end
+        current = current.Parent
+    end
+
+    return current
+end
+
+local function rootContainsText(root, wanted)
+    for _, obj in ipairs(root:GetDescendants()) do
+        if objectHasText(obj, wanted) then
+            return obj
+        end
+    end
+    return nil
+end
+
+local function findOriginalGui()
+    for _, searchRoot in ipairs(collectGuiRoots()) do
+        for _, obj in ipairs(searchRoot:GetDescendants()) do
+            if objectHasText(obj, "Instant LastZone") then
+                local candidate = getContainerFor(obj, searchRoot)
+
+                if candidate
+                    and candidate.Name ~= "Arc2playAllInOneV2"
+                    and rootContainsText(candidate, "Equip Best")
+                then
+                    return candidate, searchRoot
+                end
+            end
         end
     end
 
-    return false
+    return nil, nil
 end
 
-local function guiCenter(obj)
-    local pos = obj.AbsolutePosition
-    local size = obj.AbsoluteSize
-    return Vector2.new(pos.X + size.X / 2, pos.Y + size.Y / 2)
-end
-
-local function nearestGuiButton(gui, textObject)
-    if textObject:IsA("GuiButton") then
-        return textObject
+local function nearestButton(container, textObj)
+    if textObj and textObj:IsA("GuiButton") then
+        return textObj
     end
 
-    local target = guiCenter(textObject)
-    local best, bestDistance = nil, math.huge
+    if not textObj then
+        return nil
+    end
 
-    for _, obj in ipairs(gui:GetDescendants()) do
+    local target = textObj.AbsolutePosition + (textObj.AbsoluteSize / 2)
+    local best = nil
+    local bestDistance = math.huge
+
+    for _, obj in ipairs(container:GetDescendants()) do
         if obj:IsA("GuiButton") then
-            local p = guiCenter(obj)
-            local distance = (p - target).Magnitude
+            local center = obj.AbsolutePosition + (obj.AbsoluteSize / 2)
+            local distance = (center - target).Magnitude
 
             if distance < bestDistance then
-                best = obj
                 bestDistance = distance
+                best = obj
             end
         end
     end
@@ -833,34 +984,48 @@ local function nearestGuiButton(gui, textObject)
     return best
 end
 
-local function locateOriginalButton(gui, variants)
-    -- Даём Tora закончить создание descendants.
-    for _ = 1, 30 do
-        for _, obj in ipairs(gui:GetDescendants()) do
-            if textMatches(obj, variants) then
-                local button = nearestGuiButton(gui, obj)
-                if button then
-                    return button
-                end
-            end
+local function findButtonForText(container, wanted)
+    for _, obj in ipairs(container:GetDescendants()) do
+        if objectHasText(obj, wanted) then
+            return nearestButton(container, obj)
         end
+    end
+    return nil
+end
 
-        task.wait(0.05)
+local function hideOriginalGui(root)
+    if not root then
+        return
     end
 
-    return nil
+    if root:IsA("ScreenGui") then
+        root.Enabled = false
+        return
+    end
+
+    if root:IsA("GuiObject") then
+        root.Visible = false
+        return
+    end
+
+    for _, obj in ipairs(root:GetChildren()) do
+        if obj:IsA("ScreenGui") then
+            obj.Enabled = false
+        elseif obj:IsA("GuiObject") then
+            obj.Visible = false
+        end
+    end
 end
 
 local function fireOriginalButton(button)
     if not button or not button.Parent then
-        return false, "родная кнопка не найдена"
+        return false, "original button not found"
     end
 
     if type(getconnections) ~= "function" then
-        return false, "Xeno: getconnections недоступен"
+        return false, "getconnections unavailable"
     end
 
-    -- Настоящий клик вызывает все callbacks конкретного сигнала.
     local signals = {
         button.MouseButton1Click,
         button.Activated,
@@ -870,19 +1035,16 @@ local function fireOriginalButton(button)
     for _, signal in ipairs(signals) do
         local ok, connections = pcall(getconnections, signal)
 
-        if ok and type(connections) == "table" and #connections > 0 then
+        if ok and type(connections) == "table" then
             local fired = false
 
             for _, connection in ipairs(connections) do
-                if type(connection.Fire) == "function" then
-                    local callOk = pcall(function()
+                if type(connection.Function) == "function" then
+                    fired = pcall(connection.Function) or fired
+                elseif type(connection.Fire) == "function" then
+                    fired = pcall(function()
                         connection:Fire()
-                    end)
-                    fired = fired or callOk
-
-                elseif type(connection.Function) == "function" then
-                    local callOk = pcall(connection.Function)
-                    fired = fired or callOk
+                    end) or fired
                 end
             end
 
@@ -892,61 +1054,57 @@ local function fireOriginalButton(button)
         end
     end
 
-    return false, "callback родной кнопки не найден"
+    return false, "original callback not found"
 end
 
-local function bindOriginalTora(gui)
-    if not gui or gui.Name ~= "ToraScript" then
+local function bindAndHideOriginalGui()
+    local root = findOriginalGui()
+
+    if not root then
         return false
     end
 
-    originalToraGui = gui
+    originalGuiRoot = root
 
-    originalControls.AutoFarm = locateOriginalButton(gui, {
-        "Instant LastZone",
-        "Автофарм последней зоны",
-    })
+    if not originalControls.AutoFarm then
+        originalControls.AutoFarm = findButtonForText(root, "Instant LastZone")
+    end
 
-    originalControls.EquipBest = locateOriginalButton(gui, {
-        "Equip Best",
-        "Надеть лучшее",
-    })
+    if not originalControls.EquipBest then
+        originalControls.EquipBest = findButtonForText(root, "Equip Best")
+    end
 
-    -- Скрываем только ПОСЛЕ того, как сохранили реальные GuiButtons.
-    -- Логика/соединения Tora остаются живыми.
-    gui.Enabled = false
+    if originalControls.AutoFarm or originalControls.EquipBest then
+        hideOriginalGui(root)
 
-    log(
-        "Tora bridge:",
-        "AutoFarm =", originalControls.AutoFarm ~= nil,
-        "EquipBest =", originalControls.EquipBest ~= nil
-    )
+        log(
+            "Original GUI bridged and hidden:",
+            "AutoFarm =", originalControls.AutoFarm ~= nil,
+            "EquipBest =", originalControls.EquipBest ~= nil
+        )
 
-    return originalControls.AutoFarm ~= nil
-        or originalControls.EquipBest ~= nil
+        return true
+    end
+
+    return false
 end
 
 task.spawn(function()
-    -- Ждём рабочее оригинальное меню, которое создаёт первый модуль.
+    -- До 10 секунд ищем старое меню.
     for _ = 1, 100 do
-        local tora = CoreGui:FindFirstChild("ToraScript")
-
-        if tora and bindOriginalTora(tora) then
-            return
+        if bindAndHideOriginalGui() then
+            break
         end
-
-        task.wait(0.05)
+        task.wait(0.10)
     end
 
-    warn("[Arc2play ALL-IN-ONE] Не удалось связаться с ToraScript")
-end)
-
-CoreGui.ChildAdded:Connect(function(child)
-    if child.Name == "ToraScript" then
-        task.defer(function()
-            task.wait(0.15)
-            bindOriginalTora(child)
-        end)
+    -- И дальше постоянно не даём старому окну появиться снова.
+    while task.wait(0.50) do
+        if originalGuiRoot and originalGuiRoot.Parent then
+            hideOriginalGui(originalGuiRoot)
+        else
+            bindAndHideOriginalGui()
+        end
     end
 end)
 
@@ -963,27 +1121,38 @@ if type(gethui) == "function" then
     end
 end
 
-for _, name in ipairs({
+local oldGuiNames = {
     "Arc2playAutoManager",
     "Arc2playAutoManagerV2",
     "Arc2playAutoManagerV3",
+    "Arc2playAutoManagerV4",
+    "Arc2playAutoManagerV5",
+    "Arc2playAutoManagerV6",
+    "Arc2playAutoManagerV7",
+    "Arc2playAutoManagerV8",
+    "Arc2playAutoManagerV9",
     "Arc2playAutoManagerV10",
     "Arc2playAllInOneV1",
-}) do
-    local old = guiParent:FindFirstChild(name)
-    if old then
-        old:Destroy()
+    "Arc2playAllInOneV2",
+}
+
+for _, root in ipairs(collectGuiRoots()) do
+    for _, name in ipairs(oldGuiNames) do
+        local old = root:FindFirstChild(name, true)
+        if old then
+            old:Destroy()
+        end
     end
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "Arc2playAllInOneV1"
+gui.Name = "Arc2playAllInOneV2"
 gui.ResetOnSpawn = false
 gui.Parent = guiParent
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(455, 592)
-frame.Position = UDim2.new(0, 20, 0.5, -296)
+frame.Size = UDim2.fromOffset(455, 641)
+frame.Position = UDim2.new(0, 20, 0.5, -320)
 frame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -999,7 +1168,7 @@ title.BackgroundTransparency = 1
 title.Position = UDim2.fromOffset(14, 8)
 title.Size = UDim2.new(1, -28, 0, 30)
 title.Font = Enum.Font.GothamBold
-title.Text = "MEGA RAMP FOR SLIME • ALL-IN-ONE"
+title.Text = S("title")
 title.TextSize = 15
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -1031,6 +1200,8 @@ local function makeRow(y, labelText, height)
     return row, label
 end
 
+local toggleRedraws = {}
+
 local function makeToggle(row, initial, onChange)
     local state = initial
 
@@ -1052,10 +1223,10 @@ local function makeToggle(row, initial, onChange)
     local function draw()
         if state then
             b.BackgroundColor3 = Color3.fromRGB(42, 190, 85)
-            b.Text = "ВКЛ"
+            b.Text = S("on")
         else
             b.BackgroundColor3 = Color3.fromRGB(65, 67, 76)
-            b.Text = "ВЫКЛ"
+            b.Text = S("off")
         end
     end
 
@@ -1065,10 +1236,44 @@ local function makeToggle(row, initial, onChange)
         onChange(state)
     end)
 
+    table.insert(toggleRedraws, draw)
     draw()
+    return b
 end
 
-local autoFarmRow = makeRow(44, "Автофарм последней зоны")
+-- =========================================================
+-- LANGUAGE SELECTOR
+-- =========================================================
+
+local languageRow, languageLabel = makeRow(44, S("language"))
+
+local ruButton = Instance.new("TextButton")
+ruButton.Size = UDim2.fromOffset(46, 27)
+ruButton.Position = UDim2.new(1, -108, 0.5, -13)
+ruButton.BorderSizePixel = 0
+ruButton.Font = Enum.Font.GothamBold
+ruButton.Text = "RU"
+ruButton.TextSize = 10
+ruButton.TextColor3 = Color3.new(1, 1, 1)
+ruButton.Parent = languageRow
+
+local enButton = Instance.new("TextButton")
+enButton.Size = UDim2.fromOffset(46, 27)
+enButton.Position = UDim2.new(1, -58, 0.5, -13)
+enButton.BorderSizePixel = 0
+enButton.Font = Enum.Font.GothamBold
+enButton.Text = "EN"
+enButton.TextSize = 10
+enButton.TextColor3 = Color3.new(1, 1, 1)
+enButton.Parent = languageRow
+
+for _, b in ipairs({ruButton, enButton}) do
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 7)
+    c.Parent = b
+end
+
+local autoFarmRow, autoFarmLabel = makeRow(93, S("autoFarm"))
 makeToggle(autoFarmRow, false, function(v)
     local ok, err = fireOriginalButton(originalControls.AutoFarm)
 
@@ -1082,7 +1287,7 @@ makeToggle(autoFarmRow, false, function(v)
     end
 end)
 
-local equipBestRow = makeRow(93, "Надеть лучшее")
+local equipBestRow, equipBestLabel = makeRow(142, S("equipBest"))
 makeToggle(equipBestRow, false, function(v)
     local ok, err = fireOriginalButton(originalControls.EquipBest)
 
@@ -1096,7 +1301,7 @@ makeToggle(equipBestRow, false, function(v)
     end
 end)
 
-local eventRow = makeRow(142, "MAGIC LUCK x3 • автопокупка")
+local eventRow, eventLabel = makeRow(191, S("autoEvent"))
 makeToggle(eventRow, AUTO_EVENT, function(v)
     AUTO_EVENT = v
 
@@ -1110,7 +1315,7 @@ makeToggle(eventRow, AUTO_EVENT, function(v)
     end
 end)
 
-local sellRow = makeRow(191, "Автопродажа после фарма")
+local sellRow, sellLabel = makeRow(240, S("autoSell"))
 makeToggle(sellRow, AUTO_SELL, function(v)
     AUTO_SELL = v
 
@@ -1124,7 +1329,7 @@ end)
 -- NEW: VIP protection switch.
 -- ВКЛ = любой VIP-слайм защищён от продажи.
 -- ВЫКЛ = VIP продаётся/остаётся строго по галочкам редкости.
-local vipRow = makeRow(240, "Всегда оставлять VIP-слаймов")
+local vipRow, vipLabel = makeRow(289, S("keepVIP"))
 makeToggle(vipRow, KEEP_VIP, function(v)
     KEEP_VIP = v
 
@@ -1137,17 +1342,17 @@ end)
 
 local keepTitle = Instance.new("TextLabel")
 keepTitle.BackgroundTransparency = 1
-keepTitle.Position = UDim2.fromOffset(16, 290)
+keepTitle.Position = UDim2.fromOffset(16, 339)
 keepTitle.Size = UDim2.new(1, -32, 0, 25)
 keepTitle.Font = Enum.Font.GothamBold
-keepTitle.Text = "ЧТО ОСТАВЛЯТЬ  •  ✓ = оставить, пусто = продать"
+keepTitle.Text = S("keepTitle")
 keepTitle.TextSize = 11
 keepTitle.TextColor3 = Color3.fromRGB(245, 245, 248)
 keepTitle.TextXAlignment = Enum.TextXAlignment.Left
 keepTitle.Parent = frame
 
 local grid = Instance.new("Frame")
-grid.Position = UDim2.fromOffset(12, 317)
+grid.Position = UDim2.fromOffset(12, 366)
 grid.Size = UDim2.new(1, -24, 0, 132)
 grid.BackgroundTransparency = 1
 grid.Parent = frame
@@ -1163,12 +1368,14 @@ local function drawRarityCheckbox(key)
     local button = rarityButtons[key]
     if not button then return end
 
+    local displayName = button:GetAttribute(LANGUAGE == "EN" and "EnName" or "RuName")
+
     if keepRarities[key] == true then
         button.BackgroundColor3 = Color3.fromRGB(38, 150, 76)
-        button.Text = "✓  " .. button:GetAttribute("RuName")
+        button.Text = "✓  " .. tostring(displayName)
     else
         button.BackgroundColor3 = Color3.fromRGB(55, 57, 66)
-        button.Text = "□  " .. button:GetAttribute("RuName")
+        button.Text = "□  " .. tostring(displayName)
     end
 end
 
@@ -1183,6 +1390,7 @@ for order, info in ipairs(rarityList) do
     b.TextSize = 10
     b:SetAttribute("RarityKey", info.key)
     b:SetAttribute("RuName", info.ru)
+    b:SetAttribute("EnName", info.en)
     b.Parent = grid
 
     local c = Instance.new("UICorner")
@@ -1204,27 +1412,27 @@ for order, info in ipairs(rarityList) do
     end)
 end
 
-local eventStatusRow = makeRow(456, "", 35)
+local eventStatusRow = makeRow(505, "", 35)
 eventStatusLabel = eventStatusRow:FindFirstChildOfClass("TextLabel")
 eventStatusLabel.Size = UDim2.new(1, -20, 1, 0)
 eventStatusLabel.TextColor3 = Color3.fromRGB(255, 210, 90)
-eventStatusLabel.Text = statusEventText
+eventStatusLabel.Text = translateDynamic(statusEventText)
 
-local sellStatusRow = makeRow(497, "", 35)
+local sellStatusRow = makeRow(546, "", 35)
 sellStatusLabel = sellStatusRow:FindFirstChildOfClass("TextLabel")
 sellStatusLabel.Size = UDim2.new(1, -20, 1, 0)
 sellStatusLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
-sellStatusLabel.Text = statusSellText
+sellStatusLabel.Text = translateDynamic(statusSellText)
 
 local buyNow = Instance.new("TextButton")
 buyNow.Size = UDim2.fromOffset(205, 38)
-buyNow.Position = UDim2.fromOffset(12, 542)
+buyNow.Position = UDim2.fromOffset(12, 591)
 buyNow.BackgroundColor3 = Color3.fromRGB(40, 160, 75)
 buyNow.BorderSizePixel = 0
 buyNow.Font = Enum.Font.GothamBold
 buyNow.TextColor3 = Color3.new(1, 1, 1)
 buyNow.TextSize = 10
-buyNow.Text = "КУПИТЬ / ПРОВЕРИТЬ"
+buyNow.Text = S("buyNow")
 buyNow.Parent = frame
 
 local bnc = Instance.new("UICorner")
@@ -1240,13 +1448,13 @@ end)
 
 local sellNow = Instance.new("TextButton")
 sellNow.Size = UDim2.fromOffset(205, 38)
-sellNow.Position = UDim2.fromOffset(238, 542)
+sellNow.Position = UDim2.fromOffset(238, 591)
 sellNow.BackgroundColor3 = Color3.fromRGB(185, 65, 65)
 sellNow.BorderSizePixel = 0
 sellNow.Font = Enum.Font.GothamBold
 sellNow.TextColor3 = Color3.new(1, 1, 1)
 sellNow.TextSize = 10
-sellNow.Text = "ПРОДАТЬ СЕЙЧАС"
+sellNow.Text = S("sellNow")
 sellNow.Parent = frame
 
 local snc = Instance.new("UICorner")
@@ -1257,17 +1465,68 @@ sellNow.MouseButton1Click:Connect(function()
     task.spawn(autoSellNow)
 end)
 
-log("Loaded ALL-IN-ONE V1.")
+languageRefresh = function()
+    title.Text = S("title")
+    languageLabel.Text = S("language")
+    autoFarmLabel.Text = S("autoFarm")
+    equipBestLabel.Text = S("equipBest")
+    eventLabel.Text = S("autoEvent")
+    sellLabel.Text = S("autoSell")
+    vipLabel.Text = S("keepVIP")
+    keepTitle.Text = S("keepTitle")
+    buyNow.Text = S("buyNow")
+    sellNow.Text = S("sellNow")
+
+    ruButton.BackgroundColor3 =
+        LANGUAGE == "RU"
+        and Color3.fromRGB(42, 190, 85)
+        or Color3.fromRGB(65, 67, 76)
+
+    enButton.BackgroundColor3 =
+        LANGUAGE == "EN"
+        and Color3.fromRGB(42, 190, 85)
+        or Color3.fromRGB(65, 67, 76)
+
+    for _, redraw in ipairs(toggleRedraws) do
+        redraw()
+    end
+
+    for _, info in ipairs(rarityList) do
+        drawRarityCheckbox(info.key)
+    end
+
+    if eventStatusLabel then
+        eventStatusLabel.Text = translateDynamic(statusEventText)
+    end
+
+    if sellStatusLabel then
+        sellStatusLabel.Text = translateDynamic(statusSellText)
+    end
+end
+
+ruButton.MouseButton1Click:Connect(function()
+    LANGUAGE = "RU"
+    languageRefresh()
+end)
+
+enButton.MouseButton1Click:Connect(function()
+    LANGUAGE = "EN"
+    languageRefresh()
+end)
+
+languageRefresh()
+
+log("Loaded ALL-IN-ONE V2.")
 log("Event:", EVENT_ID)
 log("AutoEvent:", AUTO_EVENT, "AutoSell:", AUTO_SELL)
 log("VIP protection:", KEEP_VIP)
 log("Checked rarities to keep:", keptRarityCount())
 ]========]
 
-runModule("Original CP92 AutoFarm", AUTOFARM_SOURCE)
+runModule("Original AutoFarm Engine", AUTOFARM_SOURCE)
 
-task.delay(0.8, function()
-    runModule("Unified Manager", MANAGER_SOURCE)
+task.delay(0.65, function()
+    runModule("Unified UI + Event + Sell", MANAGER_SOURCE)
 end)
 
-print("[MEGA RAMP ALL-IN-ONE] Starting...")
+print("[MEGA RAMP ALL-IN-ONE V2] Starting...")
