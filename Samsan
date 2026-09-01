@@ -25,11 +25,21 @@ local SlimeReveal = remotes:WaitForChild("SlimeReveal")
 local SellSlimeAction = remotes:WaitForChild("SellSlimeAction")
 
 -- =========================================================
--- REAL EVENT FROM EventConfig
+-- EVENT MODES / AUTO BUY
 -- =========================================================
 
-local EVENT_ID = "MAGIC_LUCK_3X_RAINBOW_FOUR_LEAF_CLOVER_MILLIONAIRE"
+-- В исходнике подтверждён только один реальный EventConfig ID.
+-- Добавляйте новые режимы сюда только с настоящими ID из EventConfig.
+local EVENT_MODES = {
+    {
+        key = "MAGIC_X3",
+        id = "MAGIC_LUCK_3X_RAINBOW_FOUR_LEAF_CLOVER_MILLIONAIRE",
+        ru = "MAGIC LUCK x3",
+        en = "MAGIC LUCK x3",
+    },
+}
 
+local selectedModeIndex = 1
 local AUTO_EVENT = false
 local AUTO_SELL = false
 
@@ -39,9 +49,26 @@ local KEEP_EQUIPPED = true
 
 local SELL_AFTER_REVEAL = 2.35
 local SELL_INTERVAL = 0.18
-local AUTO_SELL_EVERY = 20 -- каждые 20 секунд
+local AUTO_SELL_EVERY = 20
 local BUY_RETRY = 5
 local STATE_REFRESH = 8
+
+local LANGUAGE = "RU" -- RU / EN
+
+local function currentMode()
+    return EVENT_MODES[selectedModeIndex]
+end
+
+local function currentEventId()
+    local mode = currentMode()
+    return mode and mode.id or ""
+end
+
+local function currentModeName()
+    local mode = currentMode()
+    if not mode then return "-" end
+    return LANGUAGE == "EN" and mode.en or mode.ru
+end
 
 -- =========================================================
 -- РЕДКОСТИ ДЛЯ АВТОПРОДАЖИ
@@ -50,15 +77,15 @@ local STATE_REFRESH = 8
 -- =========================================================
 
 local rarityList = {
-    {key="COMMON",    ru="Обычный"},
-    {key="UNCOMMON",  ru="Необычный"},
-    {key="RARE",      ru="Редкий"},
-    {key="EPIC",      ru="Эпический"},
-    {key="LEGENDARY", ru="Легендарный"},
-    {key="MYTHIC",    ru="Мифический"},
-    {key="SECRET",    ru="Секретный"},
-    {key="DIVINE",    ru="Божественный"},
-    {key="LIMITED",   ru="Лимитированный"},
+    {key="COMMON",    ru="Обычный",        en="Common"},
+    {key="UNCOMMON",  ru="Необычный",      en="Uncommon"},
+    {key="RARE",      ru="Редкий",         en="Rare"},
+    {key="EPIC",      ru="Эпический",      en="Epic"},
+    {key="LEGENDARY", ru="Легендарный",    en="Legendary"},
+    {key="MYTHIC",    ru="Мифический",     en="Mythic"},
+    {key="SECRET",    ru="Секретный",      en="Secret"},
+    {key="DIVINE",    ru="Божественный",   en="Divine"},
+    {key="LIMITED",   ru="Лимитированный", en="Limited"},
 }
 
 -- По умолчанию оставляем Mythic и выше.
@@ -130,20 +157,99 @@ local eventBusy = false
 local lastBuyAttempt = -math.huge
 local lastStateRequest = -math.huge
 
-local statusEventText = "Инициализация..."
-local statusSellText = "Ждём первый инвентарь..."
+local TEXT = {
+    RU = {
+        init = "Инициализация...",
+        inventory_wait = "Ждём первый инвентарь...",
+        inventory = "Инвентарь: %d | оставить: %d",
+        auto_sell_off = "Автопродажа выключена",
+        auto_sell_on = "Автопродажа включена",
+        nothing_sell = "Нечего продавать | оставить: %d",
+        selling = "Продаём: %d шт.",
+        sold = "Продано запросов: %d | оставить: %d",
+        next_sell = "Следующая автопродажа через %d сек",
+        sell_starting = "Автопродажа запускается...",
+        event_active = "%s активно: %s",
+        waiting_other = "Ждём другое событие: %s",
+        buying = "Покупаем %s...",
+        activate_error = "Ошибка отправки Activate",
+        bought = "КУПЛЕНО • %s",
+        buy_retry = "Не купилось — повтор через %d сек",
+        auto_buy_off = "Автопокупка выключена",
+        vip_on = "VIP-защита ВКЛ: VIP не продаём",
+        vip_off = "VIP-защита ВЫКЛ: VIP по редкости",
+        keep = "%s: ОСТАВЛЯЕМ",
+        sell = "%s: БУДЕМ ПРОДАВАТЬ",
+        auto_buy = "Автопокупка",
+        auto_sell = "Автопродажа после фарма",
+        vip_keep = "Всегда оставлять VIP-слаймов",
+        mode = "Режим автопокупки",
+        language = "Язык интерфейса",
+        keep_title = "ЧТО ОСТАВЛЯТЬ  •  ✓ = оставить, пусто = продать",
+        on = "ВКЛ",
+        off = "ВЫКЛ",
+    },
+    EN = {
+        init = "Initializing...",
+        inventory_wait = "Waiting for first inventory...",
+        inventory = "Inventory: %d | keep: %d",
+        auto_sell_off = "Auto sell disabled",
+        auto_sell_on = "Auto sell enabled",
+        nothing_sell = "Nothing to sell | keep: %d",
+        selling = "Selling: %d pcs.",
+        sold = "Sell requests: %d | keep: %d",
+        next_sell = "Next auto sell in %d sec",
+        sell_starting = "Starting auto sell...",
+        event_active = "%s active: %s",
+        waiting_other = "Waiting for another event: %s",
+        buying = "Buying %s...",
+        activate_error = "Activate request error",
+        bought = "PURCHASED • %s",
+        buy_retry = "Not purchased — retry in %d sec",
+        auto_buy_off = "Auto buy disabled",
+        vip_on = "VIP protection ON: VIP will be kept",
+        vip_off = "VIP protection OFF: rarity rules apply",
+        keep = "%s: KEEP",
+        sell = "%s: SELL",
+        auto_buy = "Auto purchase",
+        auto_sell = "Auto sell after farm",
+        vip_keep = "Always keep VIP slimes",
+        mode = "Auto purchase mode",
+        language = "Interface language",
+        keep_title = "WHAT TO KEEP  •  ✓ = keep, empty = sell",
+        on = "ON",
+        off = "OFF",
+    }
+}
+
+local function tr(key, ...)
+    local lang = TEXT[LANGUAGE] or TEXT.RU
+    local value = lang[key] or TEXT.RU[key] or key
+    if select("#", ...) > 0 then
+        return string.format(value, ...)
+    end
+    return value
+end
+
+local statusEventText = tr("init")
+local statusSellText = tr("inventory_wait")
 
 -- GUI refs assigned later
 local eventStatusLabel
 local sellStatusLabel
 local rarityButtons = {}
+local staticLabels = {}
+local toggleDrawers = {}
+local modeButton
+local languageButton
+local keepTitle
 
 -- =========================================================
 -- HELPERS
 -- =========================================================
 
 local function log(...)
-    print("[Arc2play V2]", ...)
+    print("[Arc2play]", ...)
 end
 
 local function setEventStatus(text)
@@ -158,6 +264,10 @@ local function setSellStatus(text)
     if sellStatusLabel then
         sellStatusLabel.Text = statusSellText
     end
+end
+
+local function rarityName(info)
+    return LANGUAGE == "EN" and info.en or info.ru
 end
 
 local function shouldKeep(slime)
@@ -197,10 +307,7 @@ InventoryUpdate.OnClientEvent:Connect(function(inventory)
     if type(inventory) == "table" then
         latestInventory = inventory
         inventoryVersion = inventoryVersion + 1
-        setSellStatus(
-            "Инвентарь: " .. tostring(#inventory) ..
-            " | отмечено оставить: " .. tostring(keptRarityCount())
-        )
+        setSellStatus(tr("inventory", #inventory, keptRarityCount()))
     end
 end)
 
@@ -384,7 +491,7 @@ end
 
 local function autoSellNow()
     if not AUTO_SELL then
-        setSellStatus("Автопродажа выключена")
+        setSellStatus(tr("auto_sell_off"))
         return
     end
 
@@ -401,10 +508,7 @@ local function autoSellNow()
     local sellList = buildSellList(inventory)
 
     if #sellList == 0 then
-        setSellStatus(
-            "Нечего продавать | отмечено оставить: " ..
-            tostring(keptRarityCount())
-        )
+        setSellStatus(tr("nothing_sell", keptRarityCount()))
 
         closeSellWindow()
 
@@ -412,7 +516,7 @@ local function autoSellNow()
         return
     end
 
-    setSellStatus("Продаём: " .. tostring(#sellList) .. " шт.")
+    setSellStatus(tr("selling", #sellList))
     log("SELL START:", #sellList, "| keep selected:", keptRarityCount())
 
     local sold = 0
@@ -438,10 +542,7 @@ local function autoSellNow()
 
     task.wait(0.45)
 
-    setSellStatus(
-        "Продано запросов: " .. tostring(sold) ..
-        " | отмечено оставить: " .. tostring(keptRarityCount())
-    )
+    setSellStatus(tr("sold", sold, keptRarityCount()))
 
     -- Сразу после продажи закрываем окно "Продать слаймов".
     closeSellWindow()
@@ -457,17 +558,14 @@ task.spawn(function()
             local remaining = AUTO_SELL_EVERY
 
             while AUTO_SELL and remaining > 0 do
-                setSellStatus(
-                    "Следующая автопродажа через " ..
-                    tostring(remaining) .. " сек"
-                )
+                setSellStatus(tr("next_sell", remaining))
 
                 task.wait(1)
                 remaining = remaining - 1
             end
 
             if AUTO_SELL then
-                setSellStatus("Автопродажа запускается...")
+                setSellStatus(tr("sell_starting"))
                 autoSellNow()
             end
         else
@@ -486,7 +584,6 @@ local function requestEventState()
     end
 
     lastStateRequest = os.clock()
-
     pcall(function()
         EventShopAction:FireServer("RequestState")
     end)
@@ -513,7 +610,7 @@ local function remainingSeconds()
 end
 
 local function targetEventActive()
-    return getEventId() == EVENT_ID and remainingSeconds() > 0
+    return getEventId() == currentEventId() and remainingSeconds() > 0
 end
 
 local function anyEventActive()
@@ -525,78 +622,75 @@ local function formatTime(seconds)
     return string.format("%02d:%02d", math.floor(seconds / 60), seconds % 60)
 end
 
+local function refreshEventStatus()
+    if targetEventActive() then
+        setEventStatus(tr("event_active", currentModeName(), formatTime(remainingSeconds())))
+    elseif anyEventActive() then
+        setEventStatus(tr("waiting_other", formatTime(remainingSeconds())))
+    elseif AUTO_EVENT then
+        setEventStatus(tr("buying", currentModeName()))
+    else
+        setEventStatus(tr("auto_buy_off"))
+    end
+end
+
 local function tryBuyEvent(force)
     if not AUTO_EVENT and not force then
         return
     end
 
-    if eventBusy then
-        return
-    end
+    if eventBusy then return end
+    if not force and os.clock() - lastBuyAttempt < BUY_RETRY then return end
 
-    if not force and os.clock() - lastBuyAttempt < BUY_RETRY then
-        return
-    end
+    local eventId = currentEventId()
+    if eventId == "" then return end
 
     requestEventState()
     task.wait(0.25)
 
     if targetEventActive() then
-        setEventStatus("MAGIC x3 активно: " .. formatTime(remainingSeconds()))
+        setEventStatus(tr("event_active", currentModeName(), formatTime(remainingSeconds())))
         return
     end
 
     if anyEventActive() then
-        setEventStatus(
-            "Ждём другое событие: " ..
-            formatTime(remainingSeconds())
-        )
+        setEventStatus(tr("waiting_other", formatTime(remainingSeconds())))
         return
     end
 
     eventBusy = true
     lastBuyAttempt = os.clock()
-
-    setEventStatus("Покупаем MAGIC LUCK x3...")
-    log("ACTIVATE", EVENT_ID)
+    setEventStatus(tr("buying", currentModeName()))
+    log("ACTIVATE", eventId)
 
     local ok, err = pcall(function()
-        EventShopAction:FireServer("Activate", EVENT_ID)
+        EventShopAction:FireServer("Activate", eventId)
     end)
 
     if not ok then
-        warn("[Arc2play V2] Event Activate error:", err)
-        setEventStatus("Ошибка отправки Activate")
+        warn("[Arc2play] Event Activate error:", err)
+        setEventStatus(tr("activate_error"))
         eventBusy = false
         return
     end
 
-    -- Let server process purchase, then request authoritative state again.
     task.wait(1.0)
     requestEventState()
     task.wait(0.35)
 
     if targetEventActive() then
-        setEventStatus("КУПЛЕНО • " .. formatTime(remainingSeconds()))
-        log("EVENT ACTIVE:", formatTime(remainingSeconds()))
+        setEventStatus(tr("bought", formatTime(remainingSeconds())))
+        log("EVENT ACTIVE:", currentModeName(), formatTime(remainingSeconds()))
     else
-        setEventStatus(
-            "Не купилось — повтор через " ..
-            tostring(BUY_RETRY) .. " сек"
-        )
-        warn(
-            "[Arc2play V2] Activate was sent, but server did not report the target event active."
-        )
+        setEventStatus(tr("buy_retry", BUY_RETRY))
+        warn("[Arc2play] Activate was sent, but server did not report selected event active.")
     end
 
     eventBusy = false
 end
 
--- Refresh status whenever server updates relevant attributes.
 local function eventAttributeChanged()
-    if targetEventActive() then
-        setEventStatus("MAGIC x3 активно: " .. formatTime(remainingSeconds()))
-    end
+    refreshEventStatus()
 end
 
 player:GetAttributeChangedSignal("EventSystemActiveId"):Connect(eventAttributeChanged)
@@ -609,9 +703,6 @@ task.spawn(function()
     requestEventState()
     task.wait(0.5)
 
-    -- AUTO_EVENT starts enabled, so it tries immediately if no event exists.
-    tryBuyEvent(false)
-
     while task.wait(1) do
         if AUTO_EVENT then
             if os.clock() - lastStateRequest >= STATE_REFRESH then
@@ -619,21 +710,14 @@ task.spawn(function()
             end
 
             if targetEventActive() then
-                setEventStatus(
-                    "MAGIC x3 активно: " ..
-                    formatTime(remainingSeconds())
-                )
+                setEventStatus(tr("event_active", currentModeName(), formatTime(remainingSeconds())))
             elseif anyEventActive() then
-                setEventStatus(
-                    "Ждём другое событие: " ..
-                    formatTime(remainingSeconds())
-                )
+                setEventStatus(tr("waiting_other", formatTime(remainingSeconds())))
             else
-                -- The moment the old 10:00 event expires, buy again.
                 tryBuyEvent(false)
             end
         else
-            setEventStatus("Автопокупка выключена")
+            setEventStatus(tr("auto_buy_off"))
         end
     end
 end)
@@ -646,9 +730,7 @@ local guiParent = CoreGui
 
 if type(gethui) == "function" then
     local ok, result = pcall(gethui)
-    if ok and result then
-        guiParent = result
-    end
+    if ok and result then guiParent = result end
 end
 
 for _, name in ipairs({
@@ -656,47 +738,63 @@ for _, name in ipairs({
     "Arc2playAutoManagerV2",
     "Arc2playAutoManagerV3",
     "Arc2playAutoManagerV10",
+    "Arc2playAutoManagerBW",
 }) do
-    local old = guiParent:FindFirstChild(name)
-    if old then
-        old:Destroy()
-    end
+    local oldGui = guiParent:FindFirstChild(name)
+    if oldGui then oldGui:Destroy() end
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "Arc2playAutoManagerV10"
+gui.Name = "Arc2playAutoManagerBW"
 gui.ResetOnSpawn = false
 gui.Parent = guiParent
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(455, 494)
-frame.Position = UDim2.new(0, 20, 0.5, -247)
-frame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+frame.Size = UDim2.fromOffset(470, 540)
+frame.Position = UDim2.new(0, 20, 0.5, -270)
+frame.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
 frame.BorderSizePixel = 0
 frame.Active = true
 frame.Draggable = true
 frame.Parent = gui
 
 local fc = Instance.new("UICorner")
-fc.CornerRadius = UDim.new(0, 11)
+fc.CornerRadius = UDim.new(0, 12)
 fc.Parent = frame
+
+local fs = Instance.new("UIStroke")
+fs.Color = Color3.fromRGB(68, 68, 68)
+fs.Thickness = 1
+fs.Transparency = 0.15
+fs.Parent = frame
 
 local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
-title.Position = UDim2.fromOffset(14, 8)
-title.Size = UDim2.new(1, -28, 0, 30)
+title.Position = UDim2.fromOffset(16, 10)
+title.Size = UDim2.new(1, -32, 0, 28)
 title.Font = Enum.Font.GothamBold
-title.Text = "MEGA RAMP FOR SLIME • AUTO V10"
+title.Text = "MEGA RAMP FOR SLIME • YouTube - Arc2play"
 title.TextSize = 15
-title.TextColor3 = Color3.new(1, 1, 1)
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = frame
 
+local subtitle = Instance.new("TextLabel")
+subtitle.BackgroundTransparency = 1
+subtitle.Position = UDim2.fromOffset(16, 34)
+subtitle.Size = UDim2.new(1, -32, 0, 18)
+subtitle.Font = Enum.Font.Gotham
+subtitle.Text = "AUTO MANAGER • BLACK / WHITE"
+subtitle.TextSize = 9
+subtitle.TextColor3 = Color3.fromRGB(135, 135, 135)
+subtitle.TextXAlignment = Enum.TextXAlignment.Left
+subtitle.Parent = frame
+
 local function makeRow(y, labelText, height)
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, -24, 0, height or 43)
+    row.Size = UDim2.new(1, -24, 0, height or 42)
     row.Position = UDim2.fromOffset(12, y)
-    row.BackgroundColor3 = Color3.fromRGB(30, 31, 37)
+    row.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
     row.BorderSizePixel = 0
     row.Parent = frame
 
@@ -704,14 +802,20 @@ local function makeRow(y, labelText, height)
     c.CornerRadius = UDim.new(0, 8)
     c.Parent = row
 
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(48, 48, 48)
+    stroke.Thickness = 1
+    stroke.Transparency = 0.25
+    stroke.Parent = row
+
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
     label.Position = UDim2.fromOffset(12, 0)
-    label.Size = UDim2.new(1, -100, 1, 0)
+    label.Size = UDim2.new(1, -118, 1, 0)
     label.Font = Enum.Font.GothamMedium
     label.Text = labelText
     label.TextSize = 12
-    label.TextColor3 = Color3.fromRGB(240, 240, 245)
+    label.TextColor3 = Color3.fromRGB(238, 238, 238)
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = row
 
@@ -720,29 +824,34 @@ end
 
 local function makeToggle(row, initial, onChange)
     local state = initial
-
     local b = Instance.new("TextButton")
     b.AnchorPoint = Vector2.new(1, 0.5)
     b.Position = UDim2.new(1, -10, 0.5, 0)
-    b.Size = UDim2.fromOffset(62, 27)
+    b.Size = UDim2.fromOffset(70, 28)
     b.BorderSizePixel = 0
     b.AutoButtonColor = false
     b.Font = Enum.Font.GothamBold
     b.TextSize = 9
-    b.TextColor3 = Color3.new(1, 1, 1)
     b.Parent = row
 
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(1, 0)
     c.Parent = b
 
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(100, 100, 100)
+    stroke.Thickness = 1
+    stroke.Parent = b
+
     local function draw()
         if state then
-            b.BackgroundColor3 = Color3.fromRGB(42, 190, 85)
-            b.Text = "ВКЛ"
+            b.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+            b.TextColor3 = Color3.fromRGB(8, 8, 8)
+            b.Text = tr("on")
         else
-            b.BackgroundColor3 = Color3.fromRGB(65, 67, 76)
-            b.Text = "ВЫКЛ"
+            b.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+            b.TextColor3 = Color3.fromRGB(200, 200, 200)
+            b.Text = tr("off")
         end
     end
 
@@ -752,13 +861,44 @@ local function makeToggle(row, initial, onChange)
         onChange(state)
     end)
 
+    table.insert(toggleDrawers, draw)
     draw()
+    return b
 end
 
-local eventRow = makeRow(44, "MAGIC LUCK x3 • автопокупка")
+local languageRow, languageLabel = makeRow(60, tr("language"))
+staticLabels.language = languageLabel
+languageButton = Instance.new("TextButton")
+languageButton.AnchorPoint = Vector2.new(1, 0.5)
+languageButton.Position = UDim2.new(1, -10, 0.5, 0)
+languageButton.Size = UDim2.fromOffset(70, 28)
+languageButton.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+languageButton.TextColor3 = Color3.fromRGB(8, 8, 8)
+languageButton.BorderSizePixel = 0
+languageButton.Font = Enum.Font.GothamBold
+languageButton.TextSize = 10
+languageButton.Text = LANGUAGE
+languageButton.Parent = languageRow
+Instance.new("UICorner", languageButton).CornerRadius = UDim.new(1, 0)
+
+local modeRow, modeLabel = makeRow(108, tr("mode"))
+staticLabels.mode = modeLabel
+modeButton = Instance.new("TextButton")
+modeButton.AnchorPoint = Vector2.new(1, 0.5)
+modeButton.Position = UDim2.new(1, -10, 0.5, 0)
+modeButton.Size = UDim2.fromOffset(178, 28)
+modeButton.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+modeButton.TextColor3 = Color3.fromRGB(8, 8, 8)
+modeButton.BorderSizePixel = 0
+modeButton.Font = Enum.Font.GothamBold
+modeButton.TextSize = 9
+modeButton.Parent = modeRow
+Instance.new("UICorner", modeButton).CornerRadius = UDim.new(1, 0)
+
+local eventRow, eventLabel = makeRow(156, tr("auto_buy"))
+staticLabels.auto_buy = eventLabel
 makeToggle(eventRow, AUTO_EVENT, function(v)
     AUTO_EVENT = v
-
     if v then
         lastBuyAttempt = -math.huge
         task.spawn(function()
@@ -766,87 +906,91 @@ makeToggle(eventRow, AUTO_EVENT, function(v)
             task.wait(0.25)
             tryBuyEvent(true)
         end)
+    else
+        setEventStatus(tr("auto_buy_off"))
     end
 end)
 
-local sellRow = makeRow(93, "Автопродажа после фарма")
+local sellRow, sellLabel = makeRow(204, tr("auto_sell"))
+staticLabels.auto_sell = sellLabel
 makeToggle(sellRow, AUTO_SELL, function(v)
     AUTO_SELL = v
-
-    if v then
-        setSellStatus("Автопродажа включена")
-    else
-        setSellStatus("Автопродажа выключена")
-    end
+    setSellStatus(v and tr("auto_sell_on") or tr("auto_sell_off"))
 end)
 
--- NEW: VIP protection switch.
--- ВКЛ = любой VIP-слайм защищён от продажи.
--- ВЫКЛ = VIP продаётся/остаётся строго по галочкам редкости.
-local vipRow = makeRow(142, "Всегда оставлять VIP-слаймов")
+local vipRow, vipLabel = makeRow(252, tr("vip_keep"))
+staticLabels.vip_keep = vipLabel
 makeToggle(vipRow, KEEP_VIP, function(v)
     KEEP_VIP = v
-
-    if v then
-        setSellStatus("VIP-защита ВКЛ: VIP не продаём")
-    else
-        setSellStatus("VIP-защита ВЫКЛ: VIP по редкости")
-    end
+    setSellStatus(v and tr("vip_on") or tr("vip_off"))
 end)
 
-local keepTitle = Instance.new("TextLabel")
+keepTitle = Instance.new("TextLabel")
 keepTitle.BackgroundTransparency = 1
-keepTitle.Position = UDim2.fromOffset(16, 192)
-keepTitle.Size = UDim2.new(1, -32, 0, 25)
+keepTitle.Position = UDim2.fromOffset(16, 302)
+keepTitle.Size = UDim2.new(1, -32, 0, 24)
 keepTitle.Font = Enum.Font.GothamBold
-keepTitle.Text = "ЧТО ОСТАВЛЯТЬ  •  ✓ = оставить, пусто = продать"
-keepTitle.TextSize = 11
-keepTitle.TextColor3 = Color3.fromRGB(245, 245, 248)
+keepTitle.Text = tr("keep_title")
+keepTitle.TextSize = 10
+keepTitle.TextColor3 = Color3.fromRGB(230, 230, 230)
 keepTitle.TextXAlignment = Enum.TextXAlignment.Left
 keepTitle.Parent = frame
 
 local grid = Instance.new("Frame")
-grid.Position = UDim2.fromOffset(12, 219)
+grid.Position = UDim2.fromOffset(12, 330)
 grid.Size = UDim2.new(1, -24, 0, 132)
 grid.BackgroundTransparency = 1
 grid.Parent = frame
 
 local layout = Instance.new("UIGridLayout")
-layout.CellSize = UDim2.new(0, 137, 0, 38)
+layout.CellSize = UDim2.new(0, 142, 0, 38)
 layout.CellPadding = UDim2.new(0, 8, 0, 7)
 layout.FillDirectionMaxCells = 3
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = grid
 
+local function getRarityInfo(key)
+    for _, info in ipairs(rarityList) do
+        if info.key == key then return info end
+    end
+end
+
 local function drawRarityCheckbox(key)
     local button = rarityButtons[key]
     if not button then return end
+    local info = getRarityInfo(key)
+    local name = info and rarityName(info) or key
 
     if keepRarities[key] == true then
-        button.BackgroundColor3 = Color3.fromRGB(38, 150, 76)
-        button.Text = "✓  " .. button:GetAttribute("RuName")
+        button.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+        button.TextColor3 = Color3.fromRGB(8, 8, 8)
+        button.Text = "✓  " .. name
     else
-        button.BackgroundColor3 = Color3.fromRGB(55, 57, 66)
-        button.Text = "□  " .. button:GetAttribute("RuName")
+        button.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+        button.TextColor3 = Color3.fromRGB(205, 205, 205)
+        button.Text = "□  " .. name
     end
 end
 
 for order, info in ipairs(rarityList) do
     local b = Instance.new("TextButton")
     b.LayoutOrder = order
-    b.BackgroundColor3 = Color3.fromRGB(55, 57, 66)
+    b.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
     b.BorderSizePixel = 0
     b.AutoButtonColor = false
     b.Font = Enum.Font.GothamBold
-    b.TextColor3 = Color3.fromRGB(255, 255, 255)
-    b.TextSize = 10
-    b:SetAttribute("RarityKey", info.key)
-    b:SetAttribute("RuName", info.ru)
+    b.TextSize = 9
     b.Parent = grid
 
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, 7)
     c.Parent = b
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(60, 60, 60)
+    stroke.Thickness = 1
+    stroke.Transparency = 0.2
+    stroke.Parent = b
 
     rarityButtons[info.key] = b
     drawRarityCheckbox(info.key)
@@ -854,70 +998,65 @@ for order, info in ipairs(rarityList) do
     b.MouseButton1Click:Connect(function()
         keepRarities[info.key] = not (keepRarities[info.key] == true)
         drawRarityCheckbox(info.key)
-
-        if keepRarities[info.key] then
-            setSellStatus(info.ru .. ": ОСТАВЛЯЕМ")
-        else
-            setSellStatus(info.ru .. ": БУДЕМ ПРОДАВАТЬ")
-        end
+        local name = rarityName(info)
+        setSellStatus(keepRarities[info.key] and tr("keep", name) or tr("sell", name))
     end)
 end
 
-local eventStatusRow = makeRow(358, "", 35)
+local eventStatusRow = makeRow(468, "", 28)
 eventStatusLabel = eventStatusRow:FindFirstChildOfClass("TextLabel")
 eventStatusLabel.Size = UDim2.new(1, -20, 1, 0)
-eventStatusLabel.TextColor3 = Color3.fromRGB(255, 210, 90)
+eventStatusLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+eventStatusLabel.TextSize = 10
 eventStatusLabel.Text = statusEventText
 
-local sellStatusRow = makeRow(399, "", 35)
+local sellStatusRow = makeRow(502, "", 28)
 sellStatusLabel = sellStatusRow:FindFirstChildOfClass("TextLabel")
 sellStatusLabel.Size = UDim2.new(1, -20, 1, 0)
-sellStatusLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
+sellStatusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
+sellStatusLabel.TextSize = 10
 sellStatusLabel.Text = statusSellText
 
-local buyNow = Instance.new("TextButton")
-buyNow.Size = UDim2.fromOffset(205, 38)
-buyNow.Position = UDim2.fromOffset(12, 444)
-buyNow.BackgroundColor3 = Color3.fromRGB(40, 160, 75)
-buyNow.BorderSizePixel = 0
-buyNow.Font = Enum.Font.GothamBold
-buyNow.TextColor3 = Color3.new(1, 1, 1)
-buyNow.TextSize = 10
-buyNow.Text = "КУПИТЬ / ПРОВЕРИТЬ"
-buyNow.Parent = frame
+local function redrawLanguage()
+    staticLabels.language.Text = tr("language")
+    staticLabels.mode.Text = tr("mode")
+    staticLabels.auto_buy.Text = tr("auto_buy")
+    staticLabels.auto_sell.Text = tr("auto_sell")
+    staticLabels.vip_keep.Text = tr("vip_keep")
+    keepTitle.Text = tr("keep_title")
+    languageButton.Text = LANGUAGE
+    modeButton.Text = currentModeName() .. " • YouTube - Arc2play"
 
-local bnc = Instance.new("UICorner")
-bnc.CornerRadius = UDim.new(0, 7)
-bnc.Parent = buyNow
+    for key in pairs(rarityButtons) do
+        drawRarityCheckbox(key)
+    end
+    for _, draw in ipairs(toggleDrawers) do draw() end
+    refreshEventStatus()
+end
 
-buyNow.MouseButton1Click:Connect(function()
-    task.spawn(function()
+languageButton.MouseButton1Click:Connect(function()
+    LANGUAGE = LANGUAGE == "RU" and "EN" or "RU"
+    redrawLanguage()
+end)
+
+modeButton.MouseButton1Click:Connect(function()
+    if #EVENT_MODES > 0 then
+        selectedModeIndex = selectedModeIndex % #EVENT_MODES + 1
         lastBuyAttempt = -math.huge
-        tryBuyEvent(true)
-    end)
+        redrawLanguage()
+        if AUTO_EVENT then
+            task.spawn(function()
+                requestEventState()
+                task.wait(0.25)
+                tryBuyEvent(true)
+            end)
+        end
+    end
 end)
 
-local sellNow = Instance.new("TextButton")
-sellNow.Size = UDim2.fromOffset(205, 38)
-sellNow.Position = UDim2.fromOffset(238, 444)
-sellNow.BackgroundColor3 = Color3.fromRGB(185, 65, 65)
-sellNow.BorderSizePixel = 0
-sellNow.Font = Enum.Font.GothamBold
-sellNow.TextColor3 = Color3.new(1, 1, 1)
-sellNow.TextSize = 10
-sellNow.Text = "ПРОДАТЬ СЕЙЧАС"
-sellNow.Parent = frame
-
-local snc = Instance.new("UICorner")
-snc.CornerRadius = UDim.new(0, 7)
-snc.Parent = sellNow
-
-sellNow.MouseButton1Click:Connect(function()
-    task.spawn(autoSellNow)
-end)
-
-log("Loaded V10.")
-log("Event:", EVENT_ID)
+redrawLanguage()
+log("Loaded Black/White RU/EN.")
+log("Event:", currentEventId())
 log("AutoEvent:", AUTO_EVENT, "AutoSell:", AUTO_SELL)
 log("VIP protection:", KEEP_VIP)
 log("Checked rarities to keep:", keptRarityCount())
