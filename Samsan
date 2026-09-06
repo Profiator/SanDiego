@@ -1,47 +1,59 @@
 --[[
-    CYBER PANEL V1
-    Minimal transparent cyber UI for Xeno / Roblox
+    CYBER PANEL V2 RU
+    Компактная версия для Xeno / Roblox.
 
-    Tabs:
-      • CHARACTER
-      • AUTOFARM (placeholder for later)
+    Вкладка "ПЕРСОНАЖ":
+      • Ник + координаты + копирование
+      • Скорость + ползунок
+      • Noclip
+      • Fly WASD / Space / Ctrl + скорость
+      • Автоклик
+      • Бесконечный прыжок
 
-    CHARACTER:
-      • Player nickname
-      • Live X / Y / Z coordinates + COPY
-      • Walk Speed toggle + slider
-      • Noclip toggle
-      • Fly toggle (WASD / Space / LeftCtrl) + speed slider
-      • Auto Click toggle
-      • Infinite Jump toggle
+    Вкладка "АВТОФАРМ":
+      • Экспериментальный фарм мобов
+      • ТП на этап 75
+      • Сканер механики 61–75 / RemoteEvent / RemoteFunction
 
-    Everything starts OFF.
+    Все функции при запуске ВЫКЛ.
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
 local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
+local TARGET_75 = Vector3.new(3002.57, 4.19, 1527.89)
+
 local state = {
     speed = false,
     speedValue = 50,
+
     noclip = false,
+
     fly = false,
     flySpeed = 80,
+
     autoClick = false,
-    clickInterval = 0.10,
+    clickInterval = 0.08,
+
     infiniteJump = false,
+
+    autoFarm = false,
+    farmRadius = 2500,
 }
 
 local alive = true
 local connections = {}
 local originalCollisions = {}
 local originalWalkSpeed = nil
+local farmStatusLabel = nil
 
 local function addConnection(c)
     table.insert(connections, c)
@@ -62,7 +74,18 @@ local function getRoot()
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
+local function setFarmStatus(text)
+    if farmStatusLabel and farmStatusLabel.Parent then
+        farmStatusLabel.Text = tostring(text)
+    end
+end
+
+-- =========================================================
+-- GUI PARENT / CLEANUP
+-- =========================================================
+
 local guiParent = CoreGui
+
 if type(gethui) == "function" then
     local ok, hui = pcall(gethui)
     if ok and hui then
@@ -70,79 +93,59 @@ if type(gethui) == "function" then
     end
 end
 
-for _, name in ipairs({"CyberPanelV1","CyberPanel"}) do
+for _, name in ipairs({
+    "CyberPanel",
+    "CyberPanelV1",
+    "CyberPanelV2",
+}) do
     local old = guiParent:FindFirstChild(name)
-    if old then old:Destroy() end
+    if old then
+        old:Destroy()
+    end
 end
+
+-- =========================================================
+-- COLORS
+-- =========================================================
 
 local C = {
-    bg = Color3.fromRGB(8, 13, 18),
-    panel = Color3.fromRGB(12, 19, 26),
-    panel2 = Color3.fromRGB(15, 24, 32),
-    stroke = Color3.fromRGB(50, 214, 255),
-    strokeDim = Color3.fromRGB(34, 88, 108),
-    text = Color3.fromRGB(226, 247, 255),
-    muted = Color3.fromRGB(116, 153, 168),
-    accent = Color3.fromRGB(42, 214, 255),
-    green = Color3.fromRGB(61, 225, 144),
-    off = Color3.fromRGB(45, 57, 66),
-    red = Color3.fromRGB(230, 79, 91),
+    bg = Color3.fromRGB(7, 12, 17),
+    panel = Color3.fromRGB(11, 18, 24),
+    panel2 = Color3.fromRGB(15, 24, 31),
+
+    cyan = Color3.fromRGB(44, 214, 255),
+    cyanDim = Color3.fromRGB(27, 84, 101),
+
+    text = Color3.fromRGB(230, 248, 255),
+    muted = Color3.fromRGB(125, 157, 169),
+
+    green = Color3.fromRGB(52, 222, 139),
+    off = Color3.fromRGB(48, 59, 67),
+    red = Color3.fromRGB(224, 73, 86),
 }
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV1"
-gui.ResetOnSpawn = false
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-gui.Parent = guiParent
-
-local main = Instance.new("Frame")
-main.Size = UDim2.fromOffset(430, 430)
-main.Position = UDim2.new(0, 24, 0.5, -215)
-main.BackgroundColor3 = C.bg
-main.BackgroundTransparency = 0.12
-main.BorderSizePixel = 0
-main.Active = true
-main.Parent = gui
-
-local c = Instance.new("UICorner")
-c.CornerRadius = UDim.new(0, 12)
-c.Parent = main
-
-local s = Instance.new("UIStroke")
-s.Thickness = 1
-s.Color = C.stroke
-s.Transparency = 0.25
-s.Parent = main
-
-local topLine = Instance.new("Frame")
-topLine.Size = UDim2.new(1, -24, 0, 2)
-topLine.Position = UDim2.fromOffset(12, 0)
-topLine.BackgroundColor3 = C.accent
-topLine.BorderSizePixel = 0
-topLine.Parent = main
-
 local function round(obj, radius)
-    local cc = Instance.new("UICorner")
-    cc.CornerRadius = UDim.new(0, radius or 8)
-    cc.Parent = obj
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 7)
+    c.Parent = obj
 end
 
-local function stroke(obj, color, transparency)
-    local ss = Instance.new("UIStroke")
-    ss.Color = color or C.strokeDim
-    ss.Transparency = transparency or 0.5
-    ss.Thickness = 1
-    ss.Parent = obj
+local function addStroke(obj, color, trans)
+    local s = Instance.new("UIStroke")
+    s.Color = color or C.cyanDim
+    s.Transparency = trans or 0.55
+    s.Thickness = 1
+    s.Parent = obj
 end
 
-local function label(parent, text, pos, size, textSize, color, font)
+local function makeLabel(parent, text, pos, size, textSize, color, font)
     local l = Instance.new("TextLabel")
     l.BackgroundTransparency = 1
     l.Position = pos
     l.Size = size
     l.Text = text
     l.TextColor3 = color or C.text
-    l.TextSize = textSize or 12
+    l.TextSize = textSize or 10
     l.Font = font or Enum.Font.GothamMedium
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.TextYAlignment = Enum.TextYAlignment.Center
@@ -150,201 +153,351 @@ local function label(parent, text, pos, size, textSize, color, font)
     return l
 end
 
-local function button(parent, text, pos, size)
+local function makeButton(parent, text, pos, size)
     local b = Instance.new("TextButton")
     b.Position = pos
     b.Size = size
     b.BackgroundColor3 = C.panel2
+    b.BackgroundTransparency = 0.03
     b.BorderSizePixel = 0
     b.AutoButtonColor = false
     b.Text = text
     b.TextColor3 = C.text
-    b.TextSize = 11
+    b.TextSize = 9
     b.Font = Enum.Font.GothamBold
     b.Parent = parent
-    round(b, 7)
-    stroke(b, C.strokeDim, 0.5)
+
+    round(b, 6)
+    addStroke(b, C.cyanDim, 0.58)
+
     return b
 end
 
-local title = label(main, "CYBER // PANEL", UDim2.fromOffset(16, 10), UDim2.fromOffset(250, 24), 14, C.text, Enum.Font.GothamBold)
-local version = label(main, "V1", UDim2.new(1, -110, 0, 10), UDim2.fromOffset(38, 24), 10, C.muted, Enum.Font.GothamBold)
-version.TextXAlignment = Enum.TextXAlignment.Right
+-- =========================================================
+-- ROOT GUI
+-- =========================================================
 
-local closeBtn = button(main, "×", UDim2.new(1, -42, 0, 8), UDim2.fromOffset(28, 28))
-closeBtn.TextSize = 18
+local gui = Instance.new("ScreenGui")
+gui.Name = "CyberPanelV2"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = guiParent
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.fromOffset(330, 356)
+main.Position = UDim2.new(0, 18, 0.5, -178)
+main.BackgroundColor3 = C.bg
+main.BackgroundTransparency = 0.10
+main.BorderSizePixel = 0
+main.Active = true
+main.Parent = gui
+round(main, 10)
+addStroke(main, C.cyan, 0.28)
+
+local topLine = Instance.new("Frame")
+topLine.Size = UDim2.new(1, -20, 0, 2)
+topLine.Position = UDim2.fromOffset(10, 0)
+topLine.BackgroundColor3 = C.cyan
+topLine.BorderSizePixel = 0
+topLine.Parent = main
+
+-- =========================================================
+-- HEADER
+-- =========================================================
+
+makeLabel(
+    main,
+    "CYBER // PANEL",
+    UDim2.fromOffset(12, 7),
+    UDim2.fromOffset(190, 19),
+    11,
+    C.text,
+    Enum.Font.GothamBold
+)
+
+local closeBtn = makeButton(
+    main,
+    "×",
+    UDim2.new(1, -34, 0, 6),
+    UDim2.fromOffset(24, 24)
+)
+closeBtn.TextSize = 15
 closeBtn.BackgroundColor3 = C.red
-closeBtn.BackgroundTransparency = 0.18
+closeBtn.BackgroundTransparency = 0.15
 
-local playerLine = label(main, "PLAYER  //  " .. player.Name, UDim2.fromOffset(16, 39), UDim2.new(1, -32, 0, 22), 11, C.accent, Enum.Font.GothamBold)
+local playerLabel = makeLabel(
+    main,
+    "ИГРОК // " .. player.Name,
+    UDim2.fromOffset(12, 28),
+    UDim2.new(1, -24, 0, 18),
+    9,
+    C.cyan,
+    Enum.Font.GothamBold
+)
 
 local coordsBox = Instance.new("Frame")
-coordsBox.Position = UDim2.fromOffset(14, 66)
-coordsBox.Size = UDim2.new(1, -28, 0, 48)
+coordsBox.Position = UDim2.fromOffset(10, 50)
+coordsBox.Size = UDim2.new(1, -20, 0, 36)
 coordsBox.BackgroundColor3 = C.panel
-coordsBox.BackgroundTransparency = 0.10
+coordsBox.BackgroundTransparency = 0.08
 coordsBox.BorderSizePixel = 0
 coordsBox.Parent = main
-round(coordsBox, 8)
-stroke(coordsBox, C.strokeDim, 0.5)
+round(coordsBox, 7)
+addStroke(coordsBox, C.cyanDim, 0.58)
 
-local coordsLabel = label(coordsBox, "X 0.00   Y 0.00   Z 0.00", UDim2.fromOffset(12, 0), UDim2.new(1, -106, 1, 0), 10, C.text, Enum.Font.Code)
-local copyBtn = button(coordsBox, "COPY", UDim2.new(1, -84, 0.5, -14), UDim2.fromOffset(72, 28))
+local coordsLabel = makeLabel(
+    coordsBox,
+    "X 0.00   Y 0.00   Z 0.00",
+    UDim2.fromOffset(9, 0),
+    UDim2.new(1, -77, 1, 0),
+    8,
+    C.text,
+    Enum.Font.Code
+)
+
+local copyBtn = makeButton(
+    coordsBox,
+    "КОПИЯ",
+    UDim2.new(1, -66, 0.5, -12),
+    UDim2.fromOffset(58, 24)
+)
+
+-- =========================================================
+-- TABS
+-- =========================================================
 
 local tabs = Instance.new("Frame")
-tabs.Position = UDim2.fromOffset(14, 123)
-tabs.Size = UDim2.new(1, -28, 0, 34)
+tabs.Position = UDim2.fromOffset(10, 92)
+tabs.Size = UDim2.new(1, -20, 0, 28)
 tabs.BackgroundTransparency = 1
 tabs.Parent = main
 
-local characterTab = button(tabs, "CHARACTER", UDim2.fromOffset(0, 0), UDim2.new(0.5, -4, 1, 0))
-local autofarmTab = button(tabs, "AUTOFARM", UDim2.new(0.5, 4, 0, 0), UDim2.new(0.5, -4, 1, 0))
+local charTab = makeButton(
+    tabs,
+    "ПЕРСОНАЖ",
+    UDim2.fromOffset(0, 0),
+    UDim2.new(0.5, -3, 1, 0)
+)
 
-local characterPage = Instance.new("Frame")
-characterPage.Position = UDim2.fromOffset(14, 166)
-characterPage.Size = UDim2.new(1, -28, 1, -180)
-characterPage.BackgroundTransparency = 1
-characterPage.Parent = main
+local farmTab = makeButton(
+    tabs,
+    "АВТОФАРМ",
+    UDim2.new(0.5, 3, 0, 0),
+    UDim2.new(0.5, -3, 1, 0)
+)
 
-local autofarmPage = Instance.new("Frame")
-autofarmPage.Position = characterPage.Position
-autofarmPage.Size = characterPage.Size
-autofarmPage.BackgroundTransparency = 1
-autofarmPage.Visible = false
-autofarmPage.Parent = main
+local charPage = Instance.new("Frame")
+charPage.Position = UDim2.fromOffset(10, 126)
+charPage.Size = UDim2.new(1, -20, 1, -136)
+charPage.BackgroundTransparency = 1
+charPage.Parent = main
+
+local farmPage = Instance.new("Frame")
+farmPage.Position = charPage.Position
+farmPage.Size = charPage.Size
+farmPage.BackgroundTransparency = 1
+farmPage.Visible = false
+farmPage.Parent = main
 
 local function setTab(name)
-    local charActive = name == "CHARACTER"
-    characterPage.Visible = charActive
-    autofarmPage.Visible = not charActive
-    characterTab.BackgroundColor3 = charActive and C.accent or C.panel2
-    characterTab.TextColor3 = charActive and C.bg or C.text
-    autofarmTab.BackgroundColor3 = not charActive and C.accent or C.panel2
-    autofarmTab.TextColor3 = not charActive and C.bg or C.text
+    local charActive = name == "CHAR"
+
+    charPage.Visible = charActive
+    farmPage.Visible = not charActive
+
+    charTab.BackgroundColor3 = charActive and C.cyan or C.panel2
+    charTab.TextColor3 = charActive and C.bg or C.text
+
+    farmTab.BackgroundColor3 = not charActive and C.cyan or C.panel2
+    farmTab.TextColor3 = not charActive and C.bg or C.text
 end
 
-setTab("CHARACTER")
-addConnection(characterTab.MouseButton1Click:Connect(function() setTab("CHARACTER") end))
-addConnection(autofarmTab.MouseButton1Click:Connect(function() setTab("AUTOFARM") end))
+setTab("CHAR")
 
-local function makeRow(parent, y, titleText, height)
+addConnection(charTab.MouseButton1Click:Connect(function()
+    setTab("CHAR")
+end))
+
+addConnection(farmTab.MouseButton1Click:Connect(function()
+    setTab("FARM")
+end))
+
+-- =========================================================
+-- ROW / TOGGLE
+-- =========================================================
+
+local function makeRow(parent, y, text, height)
     local row = Instance.new("Frame")
     row.Position = UDim2.fromOffset(0, y)
-    row.Size = UDim2.new(1, 0, 0, height or 44)
+    row.Size = UDim2.new(1, 0, 0, height or 34)
     row.BackgroundColor3 = C.panel
-    row.BackgroundTransparency = 0.09
+    row.BackgroundTransparency = 0.08
     row.BorderSizePixel = 0
     row.Parent = parent
-    round(row, 8)
-    stroke(row, C.strokeDim, 0.63)
 
-    label(row, titleText, UDim2.fromOffset(12, 0), UDim2.new(1, -100, 1, 0), 11, C.text, Enum.Font.GothamMedium)
+    round(row, 7)
+    addStroke(row, C.cyanDim, 0.65)
+
+    makeLabel(
+        row,
+        text,
+        UDim2.fromOffset(9, 0),
+        UDim2.new(1, -73, 1, 0),
+        8,
+        C.text,
+        Enum.Font.GothamMedium
+    )
+
     return row
 end
 
 local function makeToggle(row, initial, callback)
     local current = initial
-    local b = button(row, "", UDim2.new(1, -72, 0.5, -13), UDim2.fromOffset(60, 26))
 
-    local function draw()
+    local b = makeButton(
+        row,
+        "",
+        UDim2.new(1, -58, 0.5, -11),
+        UDim2.fromOffset(49, 22)
+    )
+
+    local function redraw()
         if current then
             b.BackgroundColor3 = C.green
             b.TextColor3 = C.bg
-            b.Text = "ON"
+            b.Text = "ВКЛ"
         else
             b.BackgroundColor3 = C.off
             b.TextColor3 = C.text
-            b.Text = "OFF"
+            b.Text = "ВЫКЛ"
         end
     end
 
     addConnection(b.MouseButton1Click:Connect(function()
         current = not current
-        draw()
+        redraw()
         callback(current)
     end))
 
-    draw()
+    redraw()
     return b
 end
 
-local function makeSlider(parent, y, titleText, minValue, maxValue, initialValue, callback)
-    local holder = Instance.new("Frame")
-    holder.Position = UDim2.fromOffset(0, y)
-    holder.Size = UDim2.new(1, 0, 0, 58)
-    holder.BackgroundColor3 = C.panel
-    holder.BackgroundTransparency = 0.09
-    holder.BorderSizePixel = 0
-    holder.Parent = parent
-    round(holder, 8)
-    stroke(holder, C.strokeDim, 0.63)
+local function makeCompactSlider(parent, y, titleText, minValue, maxValue, initialValue, callback)
+    local box = Instance.new("Frame")
+    box.Position = UDim2.fromOffset(0, y)
+    box.Size = UDim2.new(1, 0, 0, 43)
+    box.BackgroundColor3 = C.panel
+    box.BackgroundTransparency = 0.08
+    box.BorderSizePixel = 0
+    box.Parent = parent
 
-    label(holder, titleText, UDim2.fromOffset(12, 5), UDim2.new(1, -94, 0, 22), 10, C.muted, Enum.Font.GothamBold)
+    round(box, 7)
+    addStroke(box, C.cyanDim, 0.65)
 
-    local valueLabel = label(holder, tostring(initialValue), UDim2.new(1, -68, 0, 5), UDim2.fromOffset(56, 22), 10, C.accent, Enum.Font.Code)
+    makeLabel(
+        box,
+        titleText,
+        UDim2.fromOffset(9, 2),
+        UDim2.new(1, -55, 0, 17),
+        7,
+        C.muted,
+        Enum.Font.GothamBold
+    )
+
+    local valueLabel = makeLabel(
+        box,
+        tostring(initialValue),
+        UDim2.new(1, -47, 0, 2),
+        UDim2.fromOffset(38, 17),
+        8,
+        C.cyan,
+        Enum.Font.Code
+    )
     valueLabel.TextXAlignment = Enum.TextXAlignment.Right
 
     local track = Instance.new("Frame")
-    track.Position = UDim2.fromOffset(12, 36)
-    track.Size = UDim2.new(1, -24, 0, 6)
+    track.Position = UDim2.fromOffset(9, 28)
+    track.Size = UDim2.new(1, -18, 0, 4)
     track.BackgroundColor3 = C.off
     track.BorderSizePixel = 0
-    track.Parent = holder
-    round(track, 3)
+    track.Parent = box
+    round(track, 2)
 
     local fill = Instance.new("Frame")
-    fill.Size = UDim2.fromScale(0, 1)
-    fill.BackgroundColor3 = C.accent
+    fill.BackgroundColor3 = C.cyan
     fill.BorderSizePixel = 0
     fill.Parent = track
-    round(fill, 3)
+    round(fill, 2)
 
     local knob = Instance.new("Frame")
     knob.AnchorPoint = Vector2.new(0.5, 0.5)
-    knob.Size = UDim2.fromOffset(12, 12)
+    knob.Size = UDim2.fromOffset(9, 9)
     knob.BackgroundColor3 = C.text
     knob.BorderSizePixel = 0
     knob.Parent = track
-    round(knob, 6)
+    round(knob, 5)
 
     local hit = Instance.new("TextButton")
     hit.BackgroundTransparency = 1
     hit.Text = ""
-    hit.Position = UDim2.fromOffset(-4, -10)
-    hit.Size = UDim2.new(1, 8, 0, 26)
+    hit.Position = UDim2.fromOffset(-3, -8)
+    hit.Size = UDim2.new(1, 6, 0, 20)
     hit.Parent = track
 
     local dragging = false
 
     local function setValue(v)
         v = math.floor(math.clamp(v, minValue, maxValue) + 0.5)
-        local alpha = (v - minValue) / (maxValue - minValue)
+
+        local alpha =
+            (v - minValue) /
+            math.max(maxValue - minValue, 1)
+
         fill.Size = UDim2.new(alpha, 0, 1, 0)
         knob.Position = UDim2.new(alpha, 0, 0.5, 0)
         valueLabel.Text = tostring(v)
+
         callback(v)
     end
 
-    local function updateFromX(x)
-        local alpha = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
-        setValue(minValue + (maxValue - minValue) * alpha)
+    local function setFromX(x)
+        local alpha = math.clamp(
+            (x - track.AbsolutePosition.X) /
+            math.max(track.AbsoluteSize.X, 1),
+            0,
+            1
+        )
+
+        setValue(
+            minValue +
+            (maxValue - minValue) * alpha
+        )
     end
 
     addConnection(hit.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch
+        then
             dragging = true
-            updateFromX(input.Position.X)
+            setFromX(input.Position.X)
         end
     end))
 
     addConnection(UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            updateFromX(input.Position.X)
+        if dragging and (
+            input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch
+        ) then
+            setFromX(input.Position.X)
         end
     end))
 
     addConnection(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch
+        then
             dragging = false
         end
     end))
@@ -352,82 +505,598 @@ local function makeSlider(parent, y, titleText, minValue, maxValue, initialValue
     setValue(initialValue)
 end
 
-local speedRow = makeRow(characterPage, 0, "WALK SPEED")
+-- =========================================================
+-- CHARACTER TAB
+-- =========================================================
+
+local speedRow = makeRow(charPage, 0, "СКОРОСТЬ ИГРОКА")
 makeToggle(speedRow, false, function(v)
     state.speed = v
+
     local humanoid = getHumanoid()
     if not humanoid then return end
 
     if v then
-        if originalWalkSpeed == nil then originalWalkSpeed = humanoid.WalkSpeed end
+        if originalWalkSpeed == nil then
+            originalWalkSpeed = humanoid.WalkSpeed
+        end
+
         humanoid.WalkSpeed = state.speedValue
     else
-        if originalWalkSpeed ~= nil then humanoid.WalkSpeed = originalWalkSpeed end
+        if originalWalkSpeed ~= nil then
+            humanoid.WalkSpeed = originalWalkSpeed
+        end
     end
 end)
 
-makeSlider(characterPage, 50, "SPEED VALUE", 16, 250, state.speedValue, function(v)
-    state.speedValue = v
-    if state.speed then
-        local humanoid = getHumanoid()
-        if humanoid then humanoid.WalkSpeed = v end
-    end
-end)
+makeCompactSlider(
+    charPage,
+    39,
+    "СКОРОСТЬ",
+    16,
+    250,
+    state.speedValue,
+    function(v)
+        state.speedValue = v
 
-local noclipRow = makeRow(characterPage, 114, "NOCLIP // THROUGH WALLS")
+        if state.speed then
+            local humanoid = getHumanoid()
+            if humanoid then
+                humanoid.WalkSpeed = v
+            end
+        end
+    end
+)
+
+local noclipRow = makeRow(charPage, 87, "ПРОХОД ЧЕРЕЗ СТЕНЫ")
 makeToggle(noclipRow, false, function(v)
     state.noclip = v
+
     if not v then
         for part, oldValue in pairs(originalCollisions) do
             if part and part.Parent then
-                pcall(function() part.CanCollide = oldValue end)
+                pcall(function()
+                    part.CanCollide = oldValue
+                end)
             end
         end
+
         table.clear(originalCollisions)
     end
 end)
 
-local flyRow = makeRow(characterPage, 164, "FLY // WASD + SPACE / CTRL")
+local flyRow = makeRow(charPage, 126, "ПОЛЁТ WASD + SPACE / CTRL")
 makeToggle(flyRow, false, function(v)
     state.fly = v
+
     local humanoid = getHumanoid()
     local root = getRoot()
-    if humanoid then humanoid.PlatformStand = v end
+
+    if humanoid then
+        humanoid.PlatformStand = v
+    end
+
     if not v and root then
         root.AssemblyLinearVelocity = Vector3.zero
         root.AssemblyAngularVelocity = Vector3.zero
     end
 end)
 
-makeSlider(characterPage, 214, "FLY SPEED", 10, 300, state.flySpeed, function(v)
-    state.flySpeed = v
+makeCompactSlider(
+    charPage,
+    165,
+    "СКОРОСТЬ ПОЛЁТА",
+    10,
+    300,
+    state.flySpeed,
+    function(v)
+        state.flySpeed = v
+    end
+)
+
+local clickRow = makeRow(charPage, 213, "АВТОКЛИК ЛКМ")
+makeToggle(clickRow, false, function(v)
+    state.autoClick = v
 end)
 
-local clickRow = makeRow(characterPage, 278, "AUTO CLICK // LEFT MOUSE")
-makeToggle(clickRow, false, function(v) state.autoClick = v end)
+local jumpRow = makeRow(charPage, 252, "БЕСКОНЕЧНЫЙ ПРЫЖОК")
+makeToggle(jumpRow, false, function(v)
+    state.infiniteJump = v
+end)
 
-local jumpRow = makeRow(characterPage, 328, "INFINITE JUMP")
-makeToggle(jumpRow, false, function(v) state.infiniteJump = v end)
+-- =========================================================
+-- CLICK ENGINE
+-- =========================================================
 
-local afTitle = label(autofarmPage, "AUTOFARM MODULE", UDim2.fromOffset(4, 20), UDim2.new(1, -8, 0, 28), 14, C.accent, Enum.Font.GothamBold)
-afTitle.TextXAlignment = Enum.TextXAlignment.Center
+local function activateEquippedTool()
+    local char = getCharacter()
+    if not char then return false end
 
-local afText = label(autofarmPage, "MODULE RESERVED // WE ADD IT LATER", UDim2.fromOffset(4, 56), UDim2.new(1, -8, 0, 28), 10, C.muted, Enum.Font.Code)
-afText.TextXAlignment = Enum.TextXAlignment.Center
+    local tool = char:FindFirstChildOfClass("Tool")
+    if not tool then
+        return false
+    end
 
-local function getCoordString()
+    return pcall(function()
+        tool:Activate()
+    end)
+end
+
+local function performClick()
+    local didSomething = false
+
+    -- Executor-native click is the most reliable when available.
+    if type(mouse1click) == "function" then
+        local ok = pcall(mouse1click)
+        didSomething = didSomething or ok
+    elseif type(mouse1press) == "function"
+        and type(mouse1release) == "function"
+    then
+        local ok = pcall(function()
+            mouse1press()
+            task.wait(0.015)
+            mouse1release()
+        end)
+        didSomething = didSomething or ok
+    end
+
+    -- Also activate an equipped Tool, useful for simulator weapons.
+    didSomething = activateEquippedTool() or didSomething
+
+    -- VirtualUser fallback.
+    local mouse = UserInputService:GetMouseLocation()
+
+    local vuOk = pcall(function()
+        VirtualUser:Button1Down(
+            Vector2.new(mouse.X, mouse.Y),
+            camera and camera.CFrame or CFrame.new()
+        )
+
+        task.wait(0.015)
+
+        VirtualUser:Button1Up(
+            Vector2.new(mouse.X, mouse.Y),
+            camera and camera.CFrame or CFrame.new()
+        )
+    end)
+
+    didSomething = didSomething or vuOk
+
+    -- Last fallback.
+    if not didSomething then
+        pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(
+                mouse.X,
+                mouse.Y,
+                0,
+                true,
+                game,
+                0
+            )
+
+            task.wait(0.015)
+
+            VirtualInputManager:SendMouseButtonEvent(
+                mouse.X,
+                mouse.Y,
+                0,
+                false,
+                game,
+                0
+            )
+        end)
+    end
+end
+
+task.spawn(function()
+    while alive do
+        if state.autoClick then
+            performClick()
+            task.wait(state.clickInterval)
+        else
+            task.wait(0.06)
+        end
+    end
+end)
+
+-- =========================================================
+-- AUTOFARM TAB
+-- =========================================================
+
+local info = Instance.new("Frame")
+info.Position = UDim2.fromOffset(0, 0)
+info.Size = UDim2.new(1, 0, 0, 52)
+info.BackgroundColor3 = C.panel
+info.BackgroundTransparency = 0.08
+info.BorderSizePixel = 0
+info.Parent = farmPage
+round(info, 7)
+addStroke(info, C.cyanDim, 0.65)
+
+makeLabel(
+    info,
+    "ЭТАПЫ 61 → 75",
+    UDim2.fromOffset(9, 3),
+    UDim2.new(1, -18, 0, 18),
+    9,
+    C.cyan,
+    Enum.Font.GothamBold
+)
+
+makeLabel(
+    info,
+    "ЦЕЛЬ 75 // 3002.57, 4.19, 1527.89",
+    UDim2.fromOffset(9, 23),
+    UDim2.new(1, -18, 0, 20),
+    7,
+    C.muted,
+    Enum.Font.Code
+)
+
+local farmRow = makeRow(farmPage, 58, "АВТОФАРМ МОБОВ 61–75")
+makeToggle(farmRow, false, function(v)
+    state.autoFarm = v
+
+    if v then
+        setFarmStatus("Поиск активных мобов...")
+    else
+        setFarmStatus("Автофарм выключен")
+    end
+end)
+
+local tp75 = makeButton(
+    farmPage,
+    "ТП НА 75",
+    UDim2.fromOffset(0, 98),
+    UDim2.new(0.48, 0, 0, 29)
+)
+
+local scanBtn = makeButton(
+    farmPage,
+    "СКАН ИГРЫ",
+    UDim2.new(0.52, 0, 0, 98),
+    UDim2.new(0.48, 0, 0, 29)
+)
+
+farmStatusLabel = makeLabel(
+    farmPage,
+    "Автофарм выключен",
+    UDim2.fromOffset(4, 133),
+    UDim2.new(1, -8, 0, 36),
+    8,
+    C.muted,
+    Enum.Font.Code
+)
+farmStatusLabel.TextWrapped = true
+farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
+
+local notes = makeLabel(
+    farmPage,
+    "Фарм сейчас экспериментальный: ищет живых NPC с Humanoid, телепортируется к ним и атакует. Для точного зачёта этапов найдём Remote/Stage через скан.",
+    UDim2.fromOffset(4, 174),
+    UDim2.new(1, -8, 0, 72),
+    7,
+    C.muted,
+    Enum.Font.Gotham
+)
+notes.TextWrapped = true
+notes.TextYAlignment = Enum.TextYAlignment.Top
+
+addConnection(tp75.MouseButton1Click:Connect(function()
     local root = getRoot()
+    if root then
+        root.CFrame = CFrame.new(TARGET_75)
+        setFarmStatus("Телепорт на этап 75")
+    end
+end))
+
+local function isPlayerCharacter(model)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character == model then
+            return true
+        end
+    end
+    return false
+end
+
+local function getMobRoot(model)
+    return model:FindFirstChild("HumanoidRootPart")
+        or model:FindFirstChild("Torso")
+        or model:FindFirstChild("UpperTorso")
+        or model.PrimaryPart
+end
+
+local function findNearestMob()
+    local myRoot = getRoot()
+    if not myRoot then
+        return nil
+    end
+
+    local bestModel = nil
+    local bestRoot = nil
+    local bestDistance = math.huge
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Humanoid") then
+            local model = obj.Parent
+
+            if model
+                and model:IsA("Model")
+                and model ~= getCharacter()
+                and not isPlayerCharacter(model)
+                and obj.Health > 0
+            then
+                local mobRoot = getMobRoot(model)
+
+                if mobRoot and mobRoot:IsA("BasePart") then
+                    local distance =
+                        (mobRoot.Position - myRoot.Position).Magnitude
+
+                    if distance < state.farmRadius
+                        and distance < bestDistance
+                    then
+                        bestDistance = distance
+                        bestModel = model
+                        bestRoot = mobRoot
+                    end
+                end
+            end
+        end
+    end
+
+    return bestModel, bestRoot, bestDistance
+end
+
+task.spawn(function()
+    local noMobSince = nil
+
+    while alive do
+        if state.autoFarm then
+            local root = getRoot()
+            local mob, mobRoot, distance = findNearestMob()
+
+            if root and mob and mobRoot then
+                noMobSince = nil
+
+                setFarmStatus(
+                    "Цель: " ..
+                    tostring(mob.Name) ..
+                    " // " ..
+                    tostring(math.floor(distance or 0)) ..
+                    " studs"
+                )
+
+                pcall(function()
+                    root.CFrame =
+                        mobRoot.CFrame *
+                        CFrame.new(0, 0, 4)
+                end)
+
+                performClick()
+                task.wait(0.06)
+            else
+                if not noMobSince then
+                    noMobSince = os.clock()
+                end
+
+                local waitTime = os.clock() - noMobSince
+
+                setFarmStatus(
+                    "Мобы не найдены // ожидание " ..
+                    tostring(math.floor(waitTime)) ..
+                    "с"
+                )
+
+                -- Only after mobs have been absent for a while:
+                -- move to the known finish coordinate.
+                if waitTime >= 5 then
+                    local r = getRoot()
+
+                    if r then
+                        r.CFrame = CFrame.new(TARGET_75)
+                        setFarmStatus(
+                            "Мобов нет → ТП на 75. Проверяем зачёт..."
+                        )
+                    end
+
+                    noMobSince = os.clock()
+                end
+
+                task.wait(0.25)
+            end
+        else
+            noMobSince = nil
+            task.wait(0.10)
+        end
+    end
+end)
+
+-- =========================================================
+-- GAME SCANNER 61–75
+-- =========================================================
+
+local scanKeywords = {
+    "stage",
+    "wave",
+    "kill",
+    "mob",
+    "enemy",
+    "trophy",
+    "cup",
+    "battle",
+    "fight",
+    "damage",
+    "attack",
+    "progress",
+    "checkpoint",
+    "zone",
+    "level",
+    "next",
+}
+
+local function interesting(text)
+    text = string.lower(tostring(text or ""))
+
+    for _, key in ipairs(scanKeywords) do
+        if string.find(text, key, 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function fullName(obj)
+    local ok, result = pcall(function()
+        return obj:GetFullName()
+    end)
+
+    return ok and result or tostring(obj)
+end
+
+local function scanGame()
+    local lines = {}
+
+    local function add(...)
+        local parts = {...}
+        for i, v in ipairs(parts) do
+            parts[i] = tostring(v)
+        end
+
+        local line = table.concat(parts, " ")
+        table.insert(lines, line)
+        print("[CYBER SCAN]", line)
+    end
+
+    add("===== PLAYER ATTRIBUTES =====")
+
+    for name, value in pairs(player:GetAttributes()) do
+        if interesting(name) then
+            add(name, "=", value)
+        end
+    end
+
+    local leaderstats = player:FindFirstChild("leaderstats")
+    if leaderstats then
+        add("===== LEADERSTATS =====")
+
+        for _, obj in ipairs(leaderstats:GetChildren()) do
+            if interesting(obj.Name) then
+                local ok, value = pcall(function()
+                    return obj.Value
+                end)
+
+                add(obj.Name, "=", ok and value or "?")
+            end
+        end
+    end
+
+    add("===== REMOTES =====")
+
+    for _, obj in ipairs(game:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            local path = fullName(obj)
+
+            if interesting(path) then
+                add(
+                    "[" .. obj.ClassName .. "]",
+                    path
+                )
+            end
+        end
+    end
+
+    add("===== NPC / HUMANOIDS =====")
+
+    local npcCount = 0
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Humanoid") then
+            local model = obj.Parent
+
+            if model
+                and model:IsA("Model")
+                and not isPlayerCharacter(model)
+            then
+                local r = getMobRoot(model)
+
+                if r and r:IsA("BasePart") then
+                    npcCount = npcCount + 1
+
+                    add(
+                        model.Name,
+                        "HP=" .. tostring(math.floor(obj.Health)),
+                        "POS=" ..
+                        string.format(
+                            "%.1f,%.1f,%.1f",
+                            r.Position.X,
+                            r.Position.Y,
+                            r.Position.Z
+                        )
+                    )
+
+                    if npcCount >= 80 then
+                        add("NPC output limited to 80")
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    local report = table.concat(lines, "\n")
+
+    local copied = false
+
+    if type(setclipboard) == "function" then
+        copied = pcall(setclipboard, report)
+    elseif type(toclipboard) == "function" then
+        copied = pcall(toclipboard, report)
+    end
+
+    setFarmStatus(
+        copied
+        and "Скан готов и скопирован. Пришли текст мне."
+        or "Скан готов. Скопируй вывод Xeno Console."
+    )
+end
+
+addConnection(scanBtn.MouseButton1Click:Connect(function()
+    setFarmStatus("Сканируем игру...")
+    task.spawn(scanGame)
+end))
+
+-- =========================================================
+-- COORDINATES
+-- =========================================================
+
+local function coordinateStrings()
+    local root = getRoot()
+
     if not root then
-        return "X 0.00   Y 0.00   Z 0.00", "0.00, 0.00, 0.00"
+        return "X 0.00   Y 0.00   Z 0.00",
+               "0.00, 0.00, 0.00"
     end
 
     local p = root.Position
-    return string.format("X %.2f   Y %.2f   Z %.2f", p.X, p.Y, p.Z),
-           string.format("%.2f, %.2f, %.2f", p.X, p.Y, p.Z)
+
+    return string.format(
+        "X %.2f   Y %.2f   Z %.2f",
+        p.X,
+        p.Y,
+        p.Z
+    ),
+    string.format(
+        "%.2f, %.2f, %.2f",
+        p.X,
+        p.Y,
+        p.Z
+    )
 end
 
 addConnection(copyBtn.MouseButton1Click:Connect(function()
-    local _, raw = getCoordString()
+    local _, raw = coordinateStrings()
+
     local copied = false
 
     if type(setclipboard) == "function" then
@@ -440,119 +1109,191 @@ addConnection(copyBtn.MouseButton1Click:Connect(function()
         print("[CYBER PANEL] COORDS:", raw)
     end
 
-    local old = copyBtn.Text
-    copyBtn.Text = copied and "COPIED" or "PRINTED"
-    task.delay(0.8, function()
-        if copyBtn and copyBtn.Parent then copyBtn.Text = old end
+    copyBtn.Text = copied and "ГОТОВО" or "В КОНСОЛИ"
+
+    task.delay(0.7, function()
+        if copyBtn and copyBtn.Parent then
+            copyBtn.Text = "КОПИЯ"
+        end
     end)
 end))
 
+-- =========================================================
+-- NOCLIP
+-- =========================================================
+
 addConnection(RunService.Stepped:Connect(function()
-    if not alive or not state.noclip then return end
+    if not alive or not state.noclip then
+        return
+    end
+
     local char = getCharacter()
-    if not char then return end
+    if not char then
+        return
+    end
 
     for _, obj in ipairs(char:GetDescendants()) do
         if obj:IsA("BasePart") then
             if originalCollisions[obj] == nil then
                 originalCollisions[obj] = obj.CanCollide
             end
+
             obj.CanCollide = false
         end
     end
 end))
 
+-- =========================================================
+-- SPEED ENFORCER
+-- =========================================================
+
 addConnection(RunService.Heartbeat:Connect(function()
-    if not alive or not state.speed then return end
+    if not alive or not state.speed then
+        return
+    end
+
     local humanoid = getHumanoid()
-    if humanoid and humanoid.WalkSpeed ~= state.speedValue then
+
+    if humanoid
+        and humanoid.WalkSpeed ~= state.speedValue
+    then
         humanoid.WalkSpeed = state.speedValue
     end
 end))
 
-local flyKeys = {W=false,A=false,S=false,D=false,UP=false,DOWN=false}
+-- =========================================================
+-- FLY
+-- =========================================================
+
+local flyKeys = {
+    W = false,
+    A = false,
+    S = false,
+    D = false,
+    UP = false,
+    DOWN = false,
+}
+
 local keyMap = {
-    [Enum.KeyCode.W]="W",
-    [Enum.KeyCode.A]="A",
-    [Enum.KeyCode.S]="S",
-    [Enum.KeyCode.D]="D",
-    [Enum.KeyCode.Space]="UP",
-    [Enum.KeyCode.LeftControl]="DOWN",
-    [Enum.KeyCode.RightControl]="DOWN",
+    [Enum.KeyCode.W] = "W",
+    [Enum.KeyCode.A] = "A",
+    [Enum.KeyCode.S] = "S",
+    [Enum.KeyCode.D] = "D",
+    [Enum.KeyCode.Space] = "UP",
+    [Enum.KeyCode.LeftControl] = "DOWN",
+    [Enum.KeyCode.RightControl] = "DOWN",
 }
 
 addConnection(UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    local k = keyMap[input.KeyCode]
-    if k then flyKeys[k] = true end
+    if processed then
+        return
+    end
+
+    local key = keyMap[input.KeyCode]
+
+    if key then
+        flyKeys[key] = true
+    end
 end))
 
 addConnection(UserInputService.InputEnded:Connect(function(input)
-    local k = keyMap[input.KeyCode]
-    if k then flyKeys[k] = false end
+    local key = keyMap[input.KeyCode]
+
+    if key then
+        flyKeys[key] = false
+    end
 end))
 
 addConnection(RunService.RenderStepped:Connect(function()
-    if not alive then return end
+    if not alive then
+        return
+    end
 
-    local display = getCoordString()
+    local display = coordinateStrings()
     coordsLabel.Text = display
 
-    if not state.fly then return end
+    if not state.fly then
+        return
+    end
 
     camera = workspace.CurrentCamera or camera
+
     local root = getRoot()
     local humanoid = getHumanoid()
-    if not root or not humanoid or not camera then return end
+
+    if not root or not humanoid or not camera then
+        return
+    end
 
     humanoid.PlatformStand = true
 
     local direction = Vector3.zero
     local cf = camera.CFrame
 
-    if flyKeys.W then direction += cf.LookVector end
-    if flyKeys.S then direction -= cf.LookVector end
-    if flyKeys.D then direction += cf.RightVector end
-    if flyKeys.A then direction -= cf.RightVector end
-    if flyKeys.UP then direction += Vector3.yAxis end
-    if flyKeys.DOWN then direction -= Vector3.yAxis end
+    if flyKeys.W then
+        direction += cf.LookVector
+    end
 
-    if direction.Magnitude > 0 then direction = direction.Unit end
+    if flyKeys.S then
+        direction -= cf.LookVector
+    end
 
-    root.AssemblyLinearVelocity = direction * state.flySpeed
+    if flyKeys.D then
+        direction += cf.RightVector
+    end
+
+    if flyKeys.A then
+        direction -= cf.RightVector
+    end
+
+    if flyKeys.UP then
+        direction += Vector3.yAxis
+    end
+
+    if flyKeys.DOWN then
+        direction -= Vector3.yAxis
+    end
+
+    if direction.Magnitude > 0 then
+        direction = direction.Unit
+    end
+
+    root.AssemblyLinearVelocity =
+        direction * state.flySpeed
+
     root.AssemblyAngularVelocity = Vector3.zero
 end))
 
+-- =========================================================
+-- INFINITE JUMP
+-- =========================================================
+
 addConnection(UserInputService.JumpRequest:Connect(function()
-    if not alive or not state.infiniteJump then return end
+    if not alive or not state.infiniteJump then
+        return
+    end
+
     local humanoid = getHumanoid()
+
     if humanoid then
-        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        humanoid:ChangeState(
+            Enum.HumanoidStateType.Jumping
+        )
     end
 end))
 
-task.spawn(function()
-    while alive do
-        if state.autoClick then
-            local mousePos = UserInputService:GetMouseLocation()
-            pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 0)
-                task.wait(0.025)
-                VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 0)
-            end)
-            task.wait(state.clickInterval)
-        else
-            task.wait(0.08)
-        end
-    end
-end)
+-- =========================================================
+-- RESPAWN
+-- =========================================================
 
 addConnection(player.CharacterAdded:Connect(function(char)
     originalWalkSpeed = nil
     table.clear(originalCollisions)
 
-    local humanoid = char:WaitForChild("Humanoid", 10)
-    task.wait(0.2)
+    local humanoid =
+        char:WaitForChild("Humanoid", 10)
+
+    task.wait(0.15)
 
     if state.speed and humanoid then
         originalWalkSpeed = humanoid.WalkSpeed
@@ -564,15 +1305,24 @@ addConnection(player.CharacterAdded:Connect(function(char)
     end
 end))
 
+-- =========================================================
+-- DRAG HEADER
+-- =========================================================
+
 do
     local dragging = false
-    local dragStart
-    local startPos
+    local dragStart = nil
+    local startPos = nil
 
     addConnection(main.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            local y = input.Position.Y - main.AbsolutePosition.Y
-            if y <= 62 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch
+        then
+            local localY =
+                input.Position.Y -
+                main.AbsolutePosition.Y
+
+            if localY <= 48 then
                 dragging = true
                 dragStart = input.Position
                 startPos = main.Position
@@ -581,21 +1331,40 @@ do
     end))
 
     addConnection(UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        if dragging and (
+            input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch
+        ) then
+            local delta =
+                input.Position - dragStart
+
+            main.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
         end
     end))
 
     addConnection(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch
+        then
             dragging = false
         end
     end))
 end
 
+-- =========================================================
+-- SHUTDOWN
+-- =========================================================
+
 local function shutdown()
-    if not alive then return end
+    if not alive then
+        return
+    end
+
     alive = false
 
     state.speed = false
@@ -603,38 +1372,56 @@ local function shutdown()
     state.fly = false
     state.autoClick = false
     state.infiniteJump = false
+    state.autoFarm = false
 
     local humanoid = getHumanoid()
     local root = getRoot()
 
     if humanoid then
         if originalWalkSpeed ~= nil then
-            pcall(function() humanoid.WalkSpeed = originalWalkSpeed end)
+            pcall(function()
+                humanoid.WalkSpeed =
+                    originalWalkSpeed
+            end)
         end
-        pcall(function() humanoid.PlatformStand = false end)
+
+        pcall(function()
+            humanoid.PlatformStand = false
+        end)
     end
 
     if root then
         pcall(function()
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
+            root.AssemblyLinearVelocity =
+                Vector3.zero
+
+            root.AssemblyAngularVelocity =
+                Vector3.zero
         end)
     end
 
     for part, oldValue in pairs(originalCollisions) do
         if part and part.Parent then
-            pcall(function() part.CanCollide = oldValue end)
+            pcall(function()
+                part.CanCollide = oldValue
+            end)
         end
     end
 
     for _, conn in ipairs(connections) do
-        pcall(function() conn:Disconnect() end)
+        pcall(function()
+            conn:Disconnect()
+        end)
     end
 
-    if gui then gui:Destroy() end
+    if gui then
+        gui:Destroy()
+    end
 end
 
-addConnection(closeBtn.MouseButton1Click:Connect(shutdown))
+addConnection(
+    closeBtn.MouseButton1Click:Connect(shutdown)
+)
 
-print("[CYBER PANEL V1] Loaded")
-print("[CYBER PANEL V1] All functions start OFF")
+print("[CYBER PANEL V2 RU] Loaded")
+print("[CYBER PANEL V2 RU] All functions OFF")
