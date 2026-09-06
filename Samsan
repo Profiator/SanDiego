@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V4 RU
+    CYBER PANEL V5 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -35,6 +35,10 @@ local EnemySpawned = Remotes:WaitForChild("EnemySpawned")
 local EnemyDied = Remotes:WaitForChild("EnemyDied")
 local StageUnlocked = Remotes:WaitForChild("StageUnlocked")
 local AttackStarted = Remotes:WaitForChild("AttackStarted")
+
+local ReviveChoice = Remotes:WaitForChild("ReviveChoice")
+local ReviveSessionStarted = Remotes:WaitForChild("ReviveSessionStarted")
+local ReviveResolved = Remotes:WaitForChild("ReviveResolved")
 local camera = workspace.CurrentCamera
 
 local TARGET_75 = Vector3.new(3002.57, 4.19, 1527.89)
@@ -56,9 +60,10 @@ local state = {
     autoFarm = false,
     farmRadius = 2500,
 
-    turboAttack = true,
-    turboInterval = 0.01,
+    turboAttack = false,
+    turboInterval = 0.05,
     safeFarm = true,
+    autoRevenge = true,
 }
 
 local alive = true
@@ -108,7 +113,7 @@ end
 for _, name in ipairs({
     "CyberPanel",
     "CyberPanelV1",
-    "CyberPanelV4",
+    "CyberPanelV5",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -190,7 +195,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV4"
+gui.Name = "CyberPanelV5"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -726,7 +731,7 @@ makeLabel(
 
 makeLabel(
     info,
-    "SERVER ATTACK // TURBO + SAFE RANGE",
+    "SERVER ATTACK // AUTO REVENGE + SAFE RANGE",
     UDim2.fromOffset(9, 23),
     UDim2.new(1, -18, 0, 20),
     7,
@@ -745,9 +750,9 @@ makeToggle(farmRow, false, function(v)
     end
 end)
 
-local turboRow = makeRow(farmPage, 98, "ТУРБО АТАКА")
-makeToggle(turboRow, true, function(v)
-    state.turboAttack = v
+local revengeRow = makeRow(farmPage, 98, "АВТО МЕСТЬ ПРИ СМЕРТИ")
+makeToggle(revengeRow, true, function(v)
+    state.autoRevenge = v
 end)
 
 local safeRow = makeRow(farmPage, 138, "БЕЗОПАСНАЯ ДИСТАНЦИЯ")
@@ -783,7 +788,7 @@ farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 local notes = makeLabel(
     farmPage,
-    "V4: Turbo шлёт RequestAttack быстрее. Safe Range держит персонажа примерно в 40 studs от цели, чтобы реже получать урон.",
+    "V5: если сервер открывает обычное окно смерти Stage, скрипт автоматически выбирает «Месть» и просит сервер убить оставшихся врагов.",
     UDim2.fromOffset(4, 258),
     UDim2.new(1, -8, 0, 66),
     7,
@@ -931,6 +936,7 @@ addConnection(StageUnlocked.OnClientEvent:Connect(function(groupId, stageNumber)
         if stage >= FARM_STOP_STAGE then
             state.autoFarm = false
     state.turboAttack = false
+    state.autoRevenge = false
             setFarmStatus("ГОТОВО // этап 75 засчитан")
             return
         end
@@ -1014,11 +1020,7 @@ task.spawn(function()
                     )
                 )
 
-                task.wait(
-                    state.turboAttack
-                    and state.turboInterval
-                    or 0.05
-                )
+                task.wait(0.05)
             else
                 -- Если волна ещё не заспавнилась, чуть двигаемся вперёд,
                 -- чтобы пересечь триггер следующего этапа.
@@ -1041,6 +1043,77 @@ task.spawn(function()
         end
     end
 end)
+
+-- =========================================================
+-- AUTO REVENGE ON STAGE DEATH
+-- =========================================================
+
+local reviveSessionActive = false
+local reviveSessionMode = nil
+local lastRevengeAt = 0
+
+addConnection(ReviveSessionStarted.OnClientEvent:Connect(function(mode)
+    reviveSessionActive = true
+    reviveSessionMode = mode or "Stage"
+
+    if not state.autoFarm or not state.autoRevenge then
+        return
+    end
+
+    -- В Boss / Endless клиент показывает Robux-продукты.
+    -- Для автофарма 61–75 используем только обычный Stage,
+    -- чтобы не инициировать платную механику.
+    if reviveSessionMode ~= "Stage" then
+        setFarmStatus(
+            "Смерть // режим " ..
+            tostring(reviveSessionMode) ..
+            " // авто-месть пропущена"
+        )
+        return
+    end
+
+    setFarmStatus("СМЕРТЬ // AUTO МЕСТЬ...")
+
+    task.delay(0.12, function()
+        if not alive
+            or not state.autoFarm
+            or not state.autoRevenge
+            or not reviveSessionActive
+        then
+            return
+        end
+
+        if os.clock() - lastRevengeAt < 1 then
+            return
+        end
+
+        lastRevengeAt = os.clock()
+
+        local ok, err = pcall(function()
+            ReviveChoice:FireServer("Revenge")
+        end)
+
+        if ok then
+            setFarmStatus(
+                "МЕСТЬ отправлена // ждём ReviveResolved / StageUnlocked"
+            )
+        else
+            setFarmStatus(
+                "Ошибка МЕСТИ: " .. tostring(err)
+            )
+        end
+    end)
+end))
+
+addConnection(ReviveResolved.OnClientEvent:Connect(function(...)
+    reviveSessionActive = false
+
+    if state.autoFarm then
+        setFarmStatus(
+            "МЕСТЬ/ВОЗРОЖДЕНИЕ подтверждено // продолжаем"
+        )
+    end
+end))
 
 -- =========================================================
 -- GAME SCANNER 61–75
@@ -1554,5 +1627,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V4 RU] Loaded")
-print("[CYBER PANEL V4 RU] All functions OFF")
+print("[CYBER PANEL V5 RU] Loaded")
+print("[CYBER PANEL V5 RU] All functions OFF")
