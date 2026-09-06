@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V3 RU
+    CYBER PANEL V4 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -34,6 +34,7 @@ local PlayerClick = Remotes:WaitForChild("PlayerClick")
 local EnemySpawned = Remotes:WaitForChild("EnemySpawned")
 local EnemyDied = Remotes:WaitForChild("EnemyDied")
 local StageUnlocked = Remotes:WaitForChild("StageUnlocked")
+local AttackStarted = Remotes:WaitForChild("AttackStarted")
 local camera = workspace.CurrentCamera
 
 local TARGET_75 = Vector3.new(3002.57, 4.19, 1527.89)
@@ -54,6 +55,10 @@ local state = {
 
     autoFarm = false,
     farmRadius = 2500,
+
+    turboAttack = true,
+    turboInterval = 0.01,
+    safeFarm = true,
 }
 
 local alive = true
@@ -103,7 +108,7 @@ end
 for _, name in ipairs({
     "CyberPanel",
     "CyberPanelV1",
-    "CyberPanelV3",
+    "CyberPanelV4",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -185,15 +190,15 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV3"
+gui.Name = "CyberPanelV4"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.fromOffset(330, 356)
-main.Position = UDim2.new(0, 18, 0.5, -178)
+main.Size = UDim2.fromOffset(330, 438)
+main.Position = UDim2.new(0, 18, 0.5, -219)
 main.BackgroundColor3 = C.bg
 main.BackgroundTransparency = 0.10
 main.BorderSizePixel = 0
@@ -721,7 +726,7 @@ makeLabel(
 
 makeLabel(
     info,
-    "SERVER ATTACK // RequestAttack + PlayerClick",
+    "SERVER ATTACK // TURBO + SAFE RANGE",
     UDim2.fromOffset(9, 23),
     UDim2.new(1, -18, 0, 20),
     7,
@@ -740,24 +745,34 @@ makeToggle(farmRow, false, function(v)
     end
 end)
 
+local turboRow = makeRow(farmPage, 98, "ТУРБО АТАКА")
+makeToggle(turboRow, true, function(v)
+    state.turboAttack = v
+end)
+
+local safeRow = makeRow(farmPage, 138, "БЕЗОПАСНАЯ ДИСТАНЦИЯ")
+makeToggle(safeRow, true, function(v)
+    state.safeFarm = v
+end)
+
 local tp75 = makeButton(
     farmPage,
     "ТП НА 75",
-    UDim2.fromOffset(0, 98),
+    UDim2.fromOffset(0, 178),
     UDim2.new(0.48, 0, 0, 29)
 )
 
 local scanBtn = makeButton(
     farmPage,
     "СКАН ИГРЫ",
-    UDim2.new(0.52, 0, 0, 98),
+    UDim2.new(0.52, 0, 0, 178),
     UDim2.new(0.48, 0, 0, 29)
 )
 
 farmStatusLabel = makeLabel(
     farmPage,
     "Автофарм выключен",
-    UDim2.fromOffset(4, 133),
+    UDim2.fromOffset(4, 214),
     UDim2.new(1, -8, 0, 44),
     8,
     C.muted,
@@ -768,8 +783,8 @@ farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 local notes = makeLabel(
     farmPage,
-    "V3: цели берём только из EnemySpawned, а зачёт подтверждаем только StageUnlocked. После зачёта скрипт идёт вперёд к следующему этапу.",
-    UDim2.fromOffset(4, 182),
+    "V4: Turbo шлёт RequestAttack быстрее. Safe Range держит персонажа примерно в 40 studs от цели, чтобы реже получать урон.",
+    UDim2.fromOffset(4, 258),
     UDim2.new(1, -8, 0, 66),
     7,
     C.muted,
@@ -797,6 +812,23 @@ local lastSpawnZ = nil
 local lastUnlockedStage = nil
 local FARM_STOP_STAGE = 75
 local NEXT_STAGE_STEP = 92
+
+local acceptedAttackCount = 0
+local acceptedAttackRate = 0
+local acceptedWindowStart = os.clock()
+
+addConnection(AttackStarted.OnClientEvent:Connect(function()
+    acceptedAttackCount += 1
+
+    local now = os.clock()
+    local elapsed = now - acceptedWindowStart
+
+    if elapsed >= 1 then
+        acceptedAttackRate = acceptedAttackCount / elapsed
+        acceptedAttackCount = 0
+        acceptedWindowStart = now
+    end
+end))
 
 local function enemyCount()
     local n = 0
@@ -898,6 +930,7 @@ addConnection(StageUnlocked.OnClientEvent:Connect(function(groupId, stageNumber)
 
         if stage >= FARM_STOP_STAGE then
             state.autoFarm = false
+    state.turboAttack = false
             setFarmStatus("ГОТОВО // этап 75 засчитан")
             return
         end
@@ -950,10 +983,16 @@ task.spawn(function()
                 local pos = enemy.position
 
                 if typeof(pos) == "Vector3" then
-                    -- WebShooter range = 45. Становимся близко,
-                    -- но не прямо внутрь модели моба.
-                    local target =
-                        pos + Vector3.new(0, 0, -7)
+                    local target
+
+                    if state.safeFarm then
+                        -- WebShooter Range = 45.
+                        -- Держимся примерно в 40 studs от цели:
+                        -- 38 по Z + 10 вверх ≈ 39.3 studs.
+                        target = pos + Vector3.new(0, 10, -38)
+                    else
+                        target = pos + Vector3.new(0, 0, -7)
+                    end
 
                     pcall(function()
                         root.CFrame = CFrame.new(
@@ -967,14 +1006,19 @@ task.spawn(function()
 
                 setFarmStatus(
                     string.format(
-                        "АТАКА // %s [%s] // осталось %d",
+                        "АТАКА // %s [%s] // осталось %d // принято %.1f/с",
                         enemy.name,
                         enemyId,
-                        enemyCount()
+                        enemyCount(),
+                        acceptedAttackRate
                     )
                 )
 
-                task.wait(0.05)
+                task.wait(
+                    state.turboAttack
+                    and state.turboInterval
+                    or 0.05
+                )
             else
                 -- Если волна ещё не заспавнилась, чуть двигаемся вперёд,
                 -- чтобы пересечь триггер следующего этапа.
@@ -1510,5 +1554,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V3 RU] Loaded")
-print("[CYBER PANEL V3 RU] All functions OFF")
+print("[CYBER PANEL V4 RU] Loaded")
+print("[CYBER PANEL V4 RU] All functions OFF")
