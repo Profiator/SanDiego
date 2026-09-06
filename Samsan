@@ -114,6 +114,7 @@ for _, name in ipairs({
     "CyberPanel",
     "CyberPanelV1",
     "CyberPanelV5",
+    "CyberPanelV6",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -195,15 +196,15 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV5"
+gui.Name = "CyberPanelV6"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.fromOffset(330, 438)
-main.Position = UDim2.new(0, 18, 0.5, -219)
+main.Size = UDim2.fromOffset(330, 500)
+main.Position = UDim2.new(0, 18, 0.5, -250)
 main.BackgroundColor3 = C.bg
 main.BackgroundTransparency = 0.10
 main.BorderSizePixel = 0
@@ -620,6 +621,127 @@ local jumpRow = makeRow(charPage, 252, "БЕСКОНЕЧНЫЙ ПРЫЖОК")
 makeToggle(jumpRow, false, function(v)
     state.infiniteJump = v
 end)
+
+-- =========================================================
+-- TELEPORT BY COORDINATES
+-- Формат: -1211.58, 4.19, -895.05
+-- =========================================================
+
+local tpBox = Instance.new("Frame")
+tpBox.Position = UDim2.fromOffset(0, 291)
+tpBox.Size = UDim2.new(1, 0, 0, 64)
+tpBox.BackgroundColor3 = C.panel
+tpBox.BackgroundTransparency = 0.08
+tpBox.BorderSizePixel = 0
+tpBox.Parent = charPage
+round(tpBox, 7)
+addStroke(tpBox, C.cyanDim, 0.65)
+
+makeLabel(
+    tpBox,
+    "ТЕЛЕПОРТ ПО КООРДИНАТАМ",
+    UDim2.fromOffset(9, 2),
+    UDim2.new(1, -18, 0, 18),
+    7,
+    C.muted,
+    Enum.Font.GothamBold
+)
+
+local tpInput = Instance.new("TextBox")
+tpInput.Position = UDim2.fromOffset(9, 24)
+tpInput.Size = UDim2.new(1, -76, 0, 31)
+tpInput.BackgroundColor3 = C.panel2
+tpInput.BackgroundTransparency = 0.02
+tpInput.BorderSizePixel = 0
+tpInput.ClearTextOnFocus = false
+tpInput.PlaceholderText = "-1211.58, 4.19, -895.05"
+tpInput.Text = ""
+tpInput.TextColor3 = C.text
+tpInput.PlaceholderColor3 = C.muted
+tpInput.TextSize = 8
+tpInput.Font = Enum.Font.Code
+tpInput.TextXAlignment = Enum.TextXAlignment.Left
+tpInput.Parent = tpBox
+round(tpInput, 6)
+addStroke(tpInput, C.cyanDim, 0.62)
+
+local tpButton = makeButton(
+    tpBox,
+    "ТП",
+    UDim2.new(1, -60, 0, 24),
+    UDim2.fromOffset(51, 31)
+)
+tpButton.BackgroundColor3 = C.cyan
+tpButton.TextColor3 = C.bg
+
+local function parseTeleportCoordinates(raw)
+    local nums = {}
+
+    for token in string.gmatch(
+        tostring(raw or ""),
+        "[-+]?%d*%.?%d+"
+    ) do
+        local n = tonumber(token)
+
+        if n then
+            nums[#nums + 1] = n
+
+            if #nums >= 3 then
+                break
+            end
+        end
+    end
+
+    if #nums < 3 then
+        return nil
+    end
+
+    return nums[1], nums[2], nums[3]
+end
+
+local function teleportFromInput()
+    local x, y, z = parseTeleportCoordinates(tpInput.Text)
+
+    if not x then
+        tpInput.Text = ""
+        tpInput.PlaceholderText = "ОШИБКА: X, Y, Z"
+        return
+    end
+
+    local root = getRoot()
+
+    if not root then
+        tpInput.PlaceholderText = "ПЕРСОНАЖ НЕ НАЙДЕН"
+        return
+    end
+
+    pcall(function()
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.CFrame = CFrame.new(x, y, z)
+    end)
+
+    tpInput.Text = string.format(
+        "%.2f, %.2f, %.2f",
+        x,
+        y,
+        z
+    )
+end
+
+addConnection(
+    tpButton.MouseButton1Click:Connect(
+        teleportFromInput
+    )
+)
+
+addConnection(
+    tpInput.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            teleportFromInput()
+        end
+    end)
+)
 
 -- =========================================================
 -- CLICK / ATTACK ENGINE
@@ -1627,5 +1749,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V5 RU] Loaded")
-print("[CYBER PANEL V5 RU] All functions OFF")
+print("[CYBER PANEL V6 RU] Loaded")
+print("[CYBER PANEL V6 RU] All functions OFF")
