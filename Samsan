@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V2 RU
+    CYBER PANEL V3 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -27,6 +27,13 @@ local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
+
+local Remotes = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes")
+local RequestAttack = Remotes:WaitForChild("RequestAttack")
+local PlayerClick = Remotes:WaitForChild("PlayerClick")
+local EnemySpawned = Remotes:WaitForChild("EnemySpawned")
+local EnemyDied = Remotes:WaitForChild("EnemyDied")
+local StageUnlocked = Remotes:WaitForChild("StageUnlocked")
 local camera = workspace.CurrentCamera
 
 local TARGET_75 = Vector3.new(3002.57, 4.19, 1527.89)
@@ -96,7 +103,7 @@ end
 for _, name in ipairs({
     "CyberPanel",
     "CyberPanelV1",
-    "CyberPanelV2",
+    "CyberPanelV3",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -178,7 +185,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV2"
+gui.Name = "CyberPanelV3"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -605,27 +612,30 @@ makeToggle(jumpRow, false, function(v)
 end)
 
 -- =========================================================
--- CLICK ENGINE
+-- CLICK / ATTACK ENGINE
 -- =========================================================
 
-local function activateEquippedTool()
-    local char = getCharacter()
-    if not char then return false end
+-- Из декомпиляции AttackController:
+-- RequestAttack:FireServer()
+-- PlayerClick:FireServer()
+-- task.wait(0.05)
+--
+-- То есть для настоящей атаки серверу НЕ нужны enemyId/position.
+-- Сервер сам выбирает цель.
 
-    local tool = char:FindFirstChildOfClass("Tool")
-    if not tool then
-        return false
-    end
-
-    return pcall(function()
-        tool:Activate()
+local function performServerAttack()
+    local ok = pcall(function()
+        RequestAttack:FireServer()
+        PlayerClick:FireServer()
     end)
+
+    return ok
 end
 
-local function performClick()
+-- Локальные fallbacks оставляем только как резерв.
+local function performLocalClickFallback()
     local didSomething = false
 
-    -- Executor-native click is the most reliable when available.
     if type(mouse1click) == "function" then
         local ok = pcall(mouse1click)
         didSomething = didSomething or ok
@@ -640,49 +650,30 @@ local function performClick()
         didSomething = didSomething or ok
     end
 
-    -- Also activate an equipped Tool, useful for simulator weapons.
-    didSomething = activateEquippedTool() or didSomething
+    local char = getCharacter()
+    local tool = char and char:FindFirstChildOfClass("Tool")
 
-    -- VirtualUser fallback.
-    local mouse = UserInputService:GetMouseLocation()
+    if tool then
+        local ok = pcall(function()
+            tool:Activate()
+        end)
+        didSomething = didSomething or ok
+    end
 
-    local vuOk = pcall(function()
-        VirtualUser:Button1Down(
-            Vector2.new(mouse.X, mouse.Y),
-            camera and camera.CFrame or CFrame.new()
-        )
-
-        task.wait(0.015)
-
-        VirtualUser:Button1Up(
-            Vector2.new(mouse.X, mouse.Y),
-            camera and camera.CFrame or CFrame.new()
-        )
-    end)
-
-    didSomething = didSomething or vuOk
-
-    -- Last fallback.
     if not didSomething then
+        local mouse = UserInputService:GetMouseLocation()
+
         pcall(function()
-            VirtualInputManager:SendMouseButtonEvent(
-                mouse.X,
-                mouse.Y,
-                0,
-                true,
-                game,
-                0
+            VirtualUser:Button1Down(
+                Vector2.new(mouse.X, mouse.Y),
+                camera and camera.CFrame or CFrame.new()
             )
 
             task.wait(0.015)
 
-            VirtualInputManager:SendMouseButtonEvent(
-                mouse.X,
-                mouse.Y,
-                0,
-                false,
-                game,
-                0
+            VirtualUser:Button1Up(
+                Vector2.new(mouse.X, mouse.Y),
+                camera and camera.CFrame or CFrame.new()
             )
         end)
     end
@@ -690,9 +681,14 @@ end
 
 task.spawn(function()
     while alive do
-        if state.autoClick then
-            performClick()
-            task.wait(state.clickInterval)
+        if state.autoClick and not state.autoFarm then
+            local ok = performServerAttack()
+
+            if not ok then
+                performLocalClickFallback()
+            end
+
+            task.wait(0.05)
         else
             task.wait(0.06)
         end
@@ -725,7 +721,7 @@ makeLabel(
 
 makeLabel(
     info,
-    "ЦЕЛЬ 75 // 3002.57, 4.19, 1527.89",
+    "SERVER ATTACK // RequestAttack + PlayerClick",
     UDim2.fromOffset(9, 23),
     UDim2.new(1, -18, 0, 20),
     7,
@@ -733,12 +729,12 @@ makeLabel(
     Enum.Font.Code
 )
 
-local farmRow = makeRow(farmPage, 58, "АВТОФАРМ МОБОВ 61–75")
+local farmRow = makeRow(farmPage, 58, "АВТОФАРМ 61–75")
 makeToggle(farmRow, false, function(v)
     state.autoFarm = v
 
     if v then
-        setFarmStatus("Поиск активных мобов...")
+        setFarmStatus("Ожидаем серверных мобов...")
     else
         setFarmStatus("Автофарм выключен")
     end
@@ -762,7 +758,7 @@ farmStatusLabel = makeLabel(
     farmPage,
     "Автофарм выключен",
     UDim2.fromOffset(4, 133),
-    UDim2.new(1, -8, 0, 36),
+    UDim2.new(1, -8, 0, 44),
     8,
     C.muted,
     Enum.Font.Code
@@ -772,9 +768,9 @@ farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 local notes = makeLabel(
     farmPage,
-    "Фарм сейчас экспериментальный: ищет живых NPC с Humanoid, телепортируется к ним и атакует. Для точного зачёта этапов найдём Remote/Stage через скан.",
-    UDim2.fromOffset(4, 174),
-    UDim2.new(1, -8, 0, 72),
+    "V3: цели берём только из EnemySpawned, а зачёт подтверждаем только StageUnlocked. После зачёта скрипт идёт вперёд к следующему этапу.",
+    UDim2.fromOffset(4, 182),
+    UDim2.new(1, -8, 0, 66),
     7,
     C.muted,
     Enum.Font.Gotham
@@ -784,128 +780,219 @@ notes.TextYAlignment = Enum.TextYAlignment.Top
 
 addConnection(tp75.MouseButton1Click:Connect(function()
     local root = getRoot()
+
     if root then
         root.CFrame = CFrame.new(TARGET_75)
         setFarmStatus("Телепорт на этап 75")
     end
 end))
 
-local function isPlayerCharacter(model)
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Character == model then
-            return true
+-- =========================================================
+-- EVENT-DRIVEN FARM 61–75
+-- =========================================================
+
+local activeEnemies = {}
+local enemyOrder = {}
+local lastSpawnZ = nil
+local lastUnlockedStage = nil
+local FARM_STOP_STAGE = 75
+local NEXT_STAGE_STEP = 92
+
+local function enemyCount()
+    local n = 0
+    for _ in pairs(activeEnemies) do
+        n = n + 1
+    end
+    return n
+end
+
+local function removeEnemyIdFromOrder(enemyId)
+    for i = #enemyOrder, 1, -1 do
+        if enemyOrder[i] == enemyId then
+            table.remove(enemyOrder, i)
         end
     end
-    return false
 end
 
-local function getMobRoot(model)
-    return model:FindFirstChild("HumanoidRootPart")
-        or model:FindFirstChild("Torso")
-        or model:FindFirstChild("UpperTorso")
-        or model.PrimaryPart
-end
+local function getNextEnemy()
+    for i = 1, #enemyOrder do
+        local id = enemyOrder[i]
+        local data = activeEnemies[id]
 
-local function findNearestMob()
-    local myRoot = getRoot()
-    if not myRoot then
-        return nil
+        if data then
+            return id, data
+        end
     end
 
-    local bestModel = nil
-    local bestRoot = nil
-    local bestDistance = math.huge
+    return nil, nil
+end
 
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Humanoid") then
-            local model = obj.Parent
+addConnection(EnemySpawned.OnClientEvent:Connect(function(
+    enemyId,
+    displayName,
+    configName,
+    isBoss,
+    position,
+    ...
+)
+    enemyId = tostring(enemyId)
 
-            if model
-                and model:IsA("Model")
-                and model ~= getCharacter()
-                and not isPlayerCharacter(model)
-                and obj.Health > 0
-            then
-                local mobRoot = getMobRoot(model)
+    activeEnemies[enemyId] = {
+        id = enemyId,
+        name = tostring(displayName or configName or enemyId),
+        position = position,
+        boss = isBoss == true,
+        spawnedAt = os.clock(),
+    }
 
-                if mobRoot and mobRoot:IsA("BasePart") then
-                    local distance =
-                        (mobRoot.Position - myRoot.Position).Magnitude
+    removeEnemyIdFromOrder(enemyId)
+    table.insert(enemyOrder, enemyId)
 
-                    if distance < state.farmRadius
-                        and distance < bestDistance
-                    then
-                        bestDistance = distance
-                        bestModel = model
-                        bestRoot = mobRoot
-                    end
-                end
+    if typeof(position) == "Vector3" then
+        lastSpawnZ = position.Z
+    end
+
+    if state.autoFarm then
+        setFarmStatus(
+            string.format(
+                "Моб: %s%s // активных %d",
+                tostring(displayName or configName or enemyId),
+                isBoss and " [BOSS]" or "",
+                enemyCount()
+            )
+        )
+    end
+end))
+
+addConnection(EnemyDied.OnClientEvent:Connect(function(enemyId)
+    enemyId = tostring(enemyId)
+
+    activeEnemies[enemyId] = nil
+    removeEnemyIdFromOrder(enemyId)
+
+    if state.autoFarm then
+        setFarmStatus(
+            "EnemyDied " ..
+            enemyId ..
+            " // осталось " ..
+            tostring(enemyCount())
+        )
+    end
+end))
+
+addConnection(StageUnlocked.OnClientEvent:Connect(function(groupId, stageNumber)
+    local stage = tonumber(stageNumber)
+
+    if tonumber(groupId) ~= 5 or not stage then
+        return
+    end
+
+    lastUnlockedStage = stage
+
+    if state.autoFarm then
+        setFarmStatus(
+            "Этап " ..
+            tostring(stage) ..
+            " ЗАСЧИТАН ✓"
+        )
+
+        if stage >= FARM_STOP_STAGE then
+            state.autoFarm = false
+            setFarmStatus("ГОТОВО // этап 75 засчитан")
+            return
+        end
+
+        task.delay(0.35, function()
+            if not state.autoFarm then
+                return
             end
-        end
-    end
 
-    return bestModel, bestRoot, bestDistance
-end
+            local root = getRoot()
+            if not root then
+                return
+            end
+
+            -- Для перехода 74 → 75 используем точную координату пользователя.
+            if stage == 74 then
+                root.CFrame = CFrame.new(TARGET_75)
+                setFarmStatus("74 ✓ // переход на 75")
+                return
+            end
+
+            -- В логах арена идёт почти строго по +Z,
+            -- примерно на 92 studs за обычный этап.
+            local current = root.Position
+            local targetZ =
+                (lastSpawnZ or current.Z) + NEXT_STAGE_STEP
+
+            root.CFrame = CFrame.new(
+                3001.5,
+                math.max(current.Y, 6),
+                targetZ
+            )
+
+            setFarmStatus(
+                tostring(stage) ..
+                " ✓ // идём на " ..
+                tostring(stage + 1)
+            )
+        end)
+    end
+end))
 
 task.spawn(function()
-    local noMobSince = nil
-
     while alive do
         if state.autoFarm then
             local root = getRoot()
-            local mob, mobRoot, distance = findNearestMob()
+            local enemyId, enemy = getNextEnemy()
 
-            if root and mob and mobRoot then
-                noMobSince = nil
+            if root and enemy then
+                local pos = enemy.position
 
-                setFarmStatus(
-                    "Цель: " ..
-                    tostring(mob.Name) ..
-                    " // " ..
-                    tostring(math.floor(distance or 0)) ..
-                    " studs"
-                )
+                if typeof(pos) == "Vector3" then
+                    -- WebShooter range = 45. Становимся близко,
+                    -- но не прямо внутрь модели моба.
+                    local target =
+                        pos + Vector3.new(0, 0, -7)
 
-                pcall(function()
-                    root.CFrame =
-                        mobRoot.CFrame *
-                        CFrame.new(0, 0, 4)
-                end)
-
-                performClick()
-                task.wait(0.06)
-            else
-                if not noMobSince then
-                    noMobSince = os.clock()
-                end
-
-                local waitTime = os.clock() - noMobSince
-
-                setFarmStatus(
-                    "Мобы не найдены // ожидание " ..
-                    tostring(math.floor(waitTime)) ..
-                    "с"
-                )
-
-                -- Only after mobs have been absent for a while:
-                -- move to the known finish coordinate.
-                if waitTime >= 5 then
-                    local r = getRoot()
-
-                    if r then
-                        r.CFrame = CFrame.new(TARGET_75)
-                        setFarmStatus(
-                            "Мобов нет → ТП на 75. Проверяем зачёт..."
+                    pcall(function()
+                        root.CFrame = CFrame.new(
+                            target,
+                            pos
                         )
-                    end
-
-                    noMobSince = os.clock()
+                    end)
                 end
 
-                task.wait(0.25)
+                performServerAttack()
+
+                setFarmStatus(
+                    string.format(
+                        "АТАКА // %s [%s] // осталось %d",
+                        enemy.name,
+                        enemyId,
+                        enemyCount()
+                    )
+                )
+
+                task.wait(0.05)
+            else
+                -- Если волна ещё не заспавнилась, чуть двигаемся вперёд,
+                -- чтобы пересечь триггер следующего этапа.
+                if root and lastUnlockedStage and lastUnlockedStage < 75 then
+                    local current = root.Position
+
+                    if lastSpawnZ
+                        and math.abs(current.Z - lastSpawnZ) < 35
+                    then
+                        root.CFrame =
+                            root.CFrame *
+                            CFrame.new(0, 0, -6)
+                    end
+                end
+
+                task.wait(0.12)
             end
         else
-            noMobSince = nil
             task.wait(0.10)
         end
     end
@@ -1423,5 +1510,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V2 RU] Loaded")
-print("[CYBER PANEL V2 RU] All functions OFF")
+print("[CYBER PANEL V3 RU] Loaded")
+print("[CYBER PANEL V3 RU] All functions OFF")
