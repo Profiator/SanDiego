@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V7 RU
+    CYBER PANEL V8 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -10,10 +10,12 @@
       • Автоклик
       • Бесконечный прыжок
 
-    Вкладка "АВТОФАРМ":
-      • Экспериментальный фарм мобов
-      • ТП на этап 75
-      • Сканер механики 61–75 / RemoteEvent / RemoteFunction
+    Вкладка "АВТО":
+      • Автоперерождение при 100% / максимальном уровне
+      • Жёсткий Anti-AFK
+
+    Автоперерождение использует обычную бесплатную кнопку
+    "Возрождение" интерфейса игры. Платное AUTO_REBIRTH не используется.
 
     Все функции при запуске ВЫКЛ.
 ]]
@@ -24,22 +26,15 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local VirtualUser = game:GetService("VirtualUser")
 local CoreGui = game:GetService("CoreGui")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes")
 local RequestAttack = Remotes:WaitForChild("RequestAttack")
 local PlayerClick = Remotes:WaitForChild("PlayerClick")
-local EnemySpawned = Remotes:WaitForChild("EnemySpawned")
-local EnemyDied = Remotes:WaitForChild("EnemyDied")
-local StageUnlocked = Remotes:WaitForChild("StageUnlocked")
-local AttackStarted = Remotes:WaitForChild("AttackStarted")
-local EnemyStateUpdate = Remotes:WaitForChild("EnemyStateUpdate")
-local PlayerDashChain = Remotes:WaitForChild("PlayerDashChain")
 local camera = workspace.CurrentCamera
-
-local TARGET_75 = Vector3.new(3002.57, 4.19, 1527.89)
+local playerGui = player:WaitForChild("PlayerGui")
 
 local state = {
     speed = false,
@@ -55,19 +50,15 @@ local state = {
 
     infiniteJump = false,
 
-    autoFarm = false,
-    farmRadius = 2500,
-
-    safeFarm = true,
-    airHeight = 40,
-    pauseForDashChain = true,
+    autoRebirth = false,
+    antiAfk = false,
 }
 
 local alive = true
 local connections = {}
 local originalCollisions = {}
 local originalWalkSpeed = nil
-local farmStatusLabel = nil
+local autoStatusLabel = nil
 
 local function addConnection(c)
     table.insert(connections, c)
@@ -88,9 +79,9 @@ local function getRoot()
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
-local function setFarmStatus(text)
-    if farmStatusLabel and farmStatusLabel.Parent then
-        farmStatusLabel.Text = tostring(text)
+local function setAutoStatus(text)
+    if autoStatusLabel and autoStatusLabel.Parent then
+        autoStatusLabel.Text = tostring(text)
     end
 end
 
@@ -113,6 +104,7 @@ for _, name in ipairs({
     "CyberPanelV5",
     "CyberPanelV6",
     "CyberPanelV7",
+    "CyberPanelV8",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -194,7 +186,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV7"
+gui.Name = "CyberPanelV8"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -296,9 +288,9 @@ local charTab = makeButton(
     UDim2.new(0.5, -3, 1, 0)
 )
 
-local farmTab = makeButton(
+local autoTab = makeButton(
     tabs,
-    "АВТОФАРМ",
+    "АВТО",
     UDim2.new(0.5, 3, 0, 0),
     UDim2.new(0.5, -3, 1, 0)
 )
@@ -309,24 +301,24 @@ charPage.Size = UDim2.new(1, -20, 1, -136)
 charPage.BackgroundTransparency = 1
 charPage.Parent = main
 
-local farmPage = Instance.new("Frame")
-farmPage.Position = charPage.Position
-farmPage.Size = charPage.Size
-farmPage.BackgroundTransparency = 1
-farmPage.Visible = false
-farmPage.Parent = main
+local autoPage = Instance.new("Frame")
+autoPage.Position = charPage.Position
+autoPage.Size = charPage.Size
+autoPage.BackgroundTransparency = 1
+autoPage.Visible = false
+autoPage.Parent = main
 
 local function setTab(name)
     local charActive = name == "CHAR"
 
     charPage.Visible = charActive
-    farmPage.Visible = not charActive
+    autoPage.Visible = not charActive
 
     charTab.BackgroundColor3 = charActive and C.cyan or C.panel2
     charTab.TextColor3 = charActive and C.bg or C.text
 
-    farmTab.BackgroundColor3 = not charActive and C.cyan or C.panel2
-    farmTab.TextColor3 = not charActive and C.bg or C.text
+    autoTab.BackgroundColor3 = not charActive and C.cyan or C.panel2
+    autoTab.TextColor3 = not charActive and C.bg or C.text
 end
 
 setTab("CHAR")
@@ -335,8 +327,8 @@ addConnection(charTab.MouseButton1Click:Connect(function()
     setTab("CHAR")
 end))
 
-addConnection(farmTab.MouseButton1Click:Connect(function()
-    setTab("FARM")
+addConnection(autoTab.MouseButton1Click:Connect(function()
+    setTab("AUTO")
 end))
 
 -- =========================================================
@@ -811,7 +803,7 @@ end
 
 task.spawn(function()
     while alive do
-        if state.autoClick and not state.autoFarm then
+        if state.autoClick then
             local ok = performServerAttack()
 
             if not ok then
@@ -826,22 +818,22 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- AUTOFARM TAB
+-- AUTO TAB // AUTO REBIRTH + HARD ANTI-AFK
 -- =========================================================
 
-local info = Instance.new("Frame")
-info.Position = UDim2.fromOffset(0, 0)
-info.Size = UDim2.new(1, 0, 0, 52)
-info.BackgroundColor3 = C.panel
-info.BackgroundTransparency = 0.08
-info.BorderSizePixel = 0
-info.Parent = farmPage
-round(info, 7)
-addStroke(info, C.cyanDim, 0.65)
+local autoInfo = Instance.new("Frame")
+autoInfo.Position = UDim2.fromOffset(0, 0)
+autoInfo.Size = UDim2.new(1, 0, 0, 58)
+autoInfo.BackgroundColor3 = C.panel
+autoInfo.BackgroundTransparency = 0.08
+autoInfo.BorderSizePixel = 0
+autoInfo.Parent = autoPage
+round(autoInfo, 7)
+addStroke(autoInfo, C.cyanDim, 0.65)
 
 makeLabel(
-    info,
-    "ЭТАПЫ 61 → 75",
+    autoInfo,
+    "АВТОМАТИЗАЦИЯ",
     UDim2.fromOffset(9, 3),
     UDim2.new(1, -18, 0, 18),
     9,
@@ -850,563 +842,588 @@ makeLabel(
 )
 
 makeLabel(
-    info,
-    "SERVER ATTACK // LIVE POS + AIR SAFE + DASHCHAIN",
-    UDim2.fromOffset(9, 23),
+    autoInfo,
+    "REBIRTH 100% // HARD ANTI-AFK",
+    UDim2.fromOffset(9, 25),
     UDim2.new(1, -18, 0, 20),
     7,
     C.muted,
     Enum.Font.Code
 )
 
-local farmRow = makeRow(farmPage, 58, "АВТОФАРМ 61–75")
-makeToggle(farmRow, false, function(v)
-    state.autoFarm = v
+local restoreIdleConnections = function() end
+
+local rebirthRow = makeRow(
+    autoPage,
+    66,
+    "АВТОПЕРЕРОЖДЕНИЕ 100%"
+)
+
+makeToggle(rebirthRow, false, function(v)
+    state.autoRebirth = v
 
     if v then
-        setFarmStatus("Ожидаем серверных мобов...")
+        setAutoStatus("Автоперерождение ВКЛ // ждём 100%")
     else
-        setFarmStatus("Автофарм выключен")
+        setAutoStatus("Автоперерождение выключено")
     end
 end)
 
-local safeRow = makeRow(farmPage, 98, "ВОЗДУХ ~40 STUDS")
-makeToggle(safeRow, true, function(v)
-    state.safeFarm = v
-end)
-
-local dashRow = makeRow(farmPage, 138, "НЕ МЕШАТЬ DASHCHAIN")
-makeToggle(dashRow, true, function(v)
-    state.pauseForDashChain = v
-end)
-
-local tp75 = makeButton(
-    farmPage,
-    "ТП НА 75",
-    UDim2.fromOffset(0, 178),
-    UDim2.new(0.48, 0, 0, 29)
+local antiAfkRow = makeRow(
+    autoPage,
+    106,
+    "ANTI-AFK // ЖЁСТКИЙ"
 )
 
-local scanBtn = makeButton(
-    farmPage,
-    "СКАН ИГРЫ",
-    UDim2.new(0.52, 0, 0, 178),
-    UDim2.new(0.48, 0, 0, 29)
-)
+makeToggle(antiAfkRow, false, function(v)
+    state.antiAfk = v
 
-farmStatusLabel = makeLabel(
-    farmPage,
-    "Автофарм выключен",
-    UDim2.fromOffset(4, 214),
-    UDim2.new(1, -8, 0, 44),
+    if v then
+        setAutoStatus("Anti-AFK ВКЛ // защита активна")
+    else
+        restoreIdleConnections()
+        setAutoStatus("Anti-AFK выключен")
+    end
+end)
+
+autoStatusLabel = makeLabel(
+    autoPage,
+    "Все функции выключены",
+    UDim2.fromOffset(4, 152),
+    UDim2.new(1, -8, 0, 58),
     8,
     C.muted,
     Enum.Font.Code
 )
-farmStatusLabel.TextWrapped = true
-farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
+autoStatusLabel.TextWrapped = true
+autoStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
 
-local notes = makeLabel(
-    farmPage,
-    "V7: позиция мобов обновляется через EnemyStateUpdate. В воздухе держим ~40 studs — внутри WebShooter Range 45. PlayerDashChain не перебиваем телепортом.",
-    UDim2.fromOffset(4, 258),
-    UDim2.new(1, -8, 0, 66),
+makeLabel(
+    autoPage,
+    "Автоперерождение нажимает только обычную бесплатную кнопку «Возрождение». Платный AUTO_REBIRTH не используется.",
+    UDim2.fromOffset(4, 220),
+    UDim2.new(1, -8, 0, 58),
     7,
     C.muted,
-    Enum.Font.Gotham
-)
-notes.TextWrapped = true
-notes.TextYAlignment = Enum.TextYAlignment.Top
+    Enum.Font.Code
+).TextWrapped = true
 
-addConnection(tp75.MouseButton1Click:Connect(function()
-    local root = getRoot()
-
-    if root then
-        root.CFrame = CFrame.new(TARGET_75)
-        setFarmStatus("Телепорт на этап 75")
-    end
-end))
+makeLabel(
+    autoPage,
+    "Anti-AFK: Idled + VirtualUser + mouse pulse + tiny movement. Не защищает от ручного кика админом или разрыва соединения.",
+    UDim2.fromOffset(4, 286),
+    UDim2.new(1, -8, 0, 62),
+    7,
+    C.muted,
+    Enum.Font.Code
+).TextWrapped = true
 
 -- =========================================================
--- EVENT-DRIVEN FARM 61–75
+-- GUI HELPERS FOR AUTO REBIRTH
 -- =========================================================
 
-local activeEnemies = {}
-local enemyOrder = {}
-local lastSpawnZ = nil
-local lastUnlockedStage = nil
-local FARM_STOP_STAGE = 75
-local NEXT_STAGE_STEP = 92
-
-local acceptedAttackCount = 0
-local acceptedAttackRate = 0
-local acceptedWindowStart = os.clock()
-
-local dashChainUntil = 0
-local lastDashChainAt = nil
-local dashChainInterval = nil
-local dashChainCount = 0
-
-addConnection(AttackStarted.OnClientEvent:Connect(function()
-    acceptedAttackCount += 1
-
-    local now = os.clock()
-    local elapsed = now - acceptedWindowStart
-
-    if elapsed >= 1 then
-        acceptedAttackRate = acceptedAttackCount / elapsed
-        acceptedAttackCount = 0
-        acceptedWindowStart = now
-    end
-end))
-
-local function enemyCount()
-    local n = 0
-    for _ in pairs(activeEnemies) do
-        n = n + 1
-    end
-    return n
+local function normalizeGuiText(value)
+    local s = string.lower(tostring(value or ""))
+    s = s:gsub("%s+", " ")
+    return s
 end
 
-local function removeEnemyIdFromOrder(enemyId)
-    for i = #enemyOrder, 1, -1 do
-        if enemyOrder[i] == enemyId then
-            table.remove(enemyOrder, i)
-        end
+local function isGuiVisible(obj)
+    if not obj or not obj:IsA("GuiObject") then
+        return false
     end
+
+    if obj.AbsoluteSize.X < 2 or obj.AbsoluteSize.Y < 2 then
+        return false
+    end
+
+    local current = obj
+
+    while current and current ~= playerGui do
+        if current:IsA("GuiObject") and not current.Visible then
+            return false
+        end
+
+        if current:IsA("LayerCollector") and not current.Enabled then
+            return false
+        end
+
+        current = current.Parent
+    end
+
+    return true
 end
 
-local function getNextEnemy()
-    for i = 1, #enemyOrder do
-        local id = enemyOrder[i]
-        local data = activeEnemies[id]
+local function getButtonText(button)
+    local parts = {}
 
-        if data then
-            return id, data
+    if button:IsA("TextButton") then
+        parts[#parts + 1] = button.Text
+    end
+
+    parts[#parts + 1] = button.Name
+
+    for _, obj in ipairs(button:GetDescendants()) do
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+            parts[#parts + 1] = obj.Text
         end
     end
 
-    return nil, nil
+    return normalizeGuiText(table.concat(parts, " "))
 end
 
-addConnection(EnemySpawned.OnClientEvent:Connect(function(
-    enemyId,
-    displayName,
-    configName,
-    isBoss,
-    position,
-    ...
-)
-    enemyId = tostring(enemyId)
+local function parseInteger(text)
+    local digits = tostring(text or ""):gsub("%D", "")
 
-    activeEnemies[enemyId] = {
-        id = enemyId,
-        name = tostring(displayName or configName or enemyId),
-        position = position,
-        boss = isBoss == true,
-        spawnedAt = os.clock(),
-    }
-
-    removeEnemyIdFromOrder(enemyId)
-    table.insert(enemyOrder, enemyId)
-
-    if typeof(position) == "Vector3" then
-        lastSpawnZ = position.Z
+    if digits == "" then
+        return nil
     end
 
-    if state.autoFarm then
-        setFarmStatus(
-            string.format(
-                "Моб: %s%s // активных %d",
-                tostring(displayName or configName or enemyId),
-                isBoss and " [BOSS]" or "",
-                enemyCount()
-            )
-        )
-    end
-end))
+    return tonumber(digits)
+end
 
--- Live positions: spawn position is not enough because mobs move.
-addConnection(EnemyStateUpdate.OnClientEvent:Connect(function(
-    enemyId,
-    position,
-    healthPercent,
-    ...
-)
-    enemyId = tostring(enemyId)
+local function getLevelReadyState()
+    local foundCurrent = nil
+    local foundMax = nil
 
-    local data = activeEnemies[enemyId]
-    if data and typeof(position) == "Vector3" then
-        data.position = position
-        data.healthPercent = tonumber(healthPercent) or data.healthPercent
-        data.lastStateAt = os.clock()
-        lastSpawnZ = position.Z
-    end
-end))
+    for _, obj in ipairs(playerGui:GetDescendants()) do
+        if (obj:IsA("TextLabel") or obj:IsA("TextButton"))
+            and isGuiVisible(obj)
+        then
+            local raw = tostring(obj.Text or "")
+            local low = normalizeGuiText(raw)
 
--- PlayerDashChain is server -> client.
--- We do NOT fake it; we only avoid teleporting during the real chain,
--- because the server is already applying Melee LaserHit to several targets.
-addConnection(PlayerDashChain.OnClientEvent:Connect(function(payload)
-    local now = os.clock()
+            -- Прямой индикатор "МАКСИМАЛЬНЫЙ УРОВЕНЬ".
+            if string.find(low, "максимальн", 1, true)
+                or string.find(low, "max level", 1, true)
+                or string.find(low, "maximum level", 1, true)
+            then
+                return true, nil, nil, "MAX LEVEL"
+            end
 
-    dashChainCount += 1
+            -- Формат из окна: "Уровень 15650 / 15650".
+            if string.find(low, "уров", 1, true)
+                or string.find(low, "level", 1, true)
+            then
+                local left, right =
+                    raw:match("([%d%s,%.]+)%s*/%s*([%d%s,%.]+)")
 
-    if lastDashChainAt then
-        dashChainInterval = now - lastDashChainAt
-    end
+                if left and right then
+                    local current = parseInteger(left)
+                    local maxValue = parseInteger(right)
 
-    lastDashChainAt = now
+                    if current and maxValue and maxValue > 0 then
+                        foundCurrent = current
+                        foundMax = maxValue
 
-    local lungeTime = 0.18
-    local targetCount = 1
-
-    if type(payload) == "table" then
-        if tonumber(payload.LungeTime) then
-            lungeTime = tonumber(payload.LungeTime)
-        end
-
-        if type(payload.Targets) == "table" then
-            targetCount = math.max(#payload.Targets, 1)
+                        if current >= maxValue then
+                            return true, current, maxValue, "LEVEL RATIO"
+                        end
+                    end
+                end
+            end
         end
     end
 
-    local duration =
-        math.clamp(
-            targetCount * lungeTime + 0.45,
-            0.55,
-            2.50
-        )
+    return false, foundCurrent, foundMax, "WAIT"
+end
 
-    dashChainUntil = now + duration
+local function findRebirthButton(confirmOnly)
+    local best = nil
+    local bestScore = -1
 
-    if state.autoFarm then
-        local intervalText =
-            dashChainInterval
-            and string.format(" // %.1fs", dashChainInterval)
-            or ""
+    for _, obj in ipairs(playerGui:GetDescendants()) do
+        if (obj:IsA("TextButton") or obj:IsA("ImageButton"))
+            and isGuiVisible(obj)
+        then
+            local text = getButtonText(obj)
 
-        setFarmStatus(
-            string.format(
-                "DASHCHAIN #%d // целей %d%s",
-                dashChainCount,
-                targetCount,
-                intervalText
-            )
-        )
+            local isSkip =
+                string.find(text, "пропуст", 1, true)
+                or string.find(text, "skip", 1, true)
+
+            if not isSkip then
+                local score = 0
+
+                if string.find(text, "возрожд", 1, true) then
+                    score += 100
+                end
+
+                if string.find(text, "rebirth", 1, true) then
+                    score += 90
+                end
+
+                if not confirmOnly
+                    and string.find(text, "перерожд", 1, true)
+                then
+                    score += 50
+                end
+
+                -- Название GUI-объекта тоже учитываем.
+                local name = normalizeGuiText(obj.Name)
+
+                if string.find(name, "rebirth", 1, true)
+                    or string.find(name, "prestige", 1, true)
+                then
+                    score += 45
+                end
+
+                if confirmOnly
+                    and score < 90
+                then
+                    score = 0
+                end
+
+                if score > bestScore and score > 0 then
+                    best = obj
+                    bestScore = score
+                end
+            end
+        end
     end
-end))
 
-addConnection(EnemyDied.OnClientEvent:Connect(function(enemyId)
-    enemyId = tostring(enemyId)
+    return best, bestScore
+end
 
-    activeEnemies[enemyId] = nil
-    removeEnemyIdFromOrder(enemyId)
-
-    if state.autoFarm then
-        setFarmStatus(
-            "EnemyDied " ..
-            enemyId ..
-            " // осталось " ..
-            tostring(enemyCount())
-        )
+local function activateGuiButton(button)
+    if not button or not button.Parent then
+        return false, "button missing"
     end
-end))
 
-addConnection(StageUnlocked.OnClientEvent:Connect(function(groupId, stageNumber)
-    local stage = tonumber(stageNumber)
+    -- Xeno поддерживает getconnections. Сначала используем
+    -- реальный клиентский callback кнопки, если он доступен.
+    if type(getconnections) == "function" then
+        for _, signal in ipairs({
+            button.Activated,
+            button.MouseButton1Click,
+        }) do
+            local ok, list = pcall(getconnections, signal)
 
-    if tonumber(groupId) ~= 5 or not stage then
+            if ok and type(list) == "table" and #list > 0 then
+                local fired = false
+
+                for _, conn in ipairs(list) do
+                    local done = false
+
+                    if type(conn.Fire) == "function" then
+                        done = pcall(function()
+                            conn:Fire()
+                        end)
+                    elseif type(conn.Function) == "function" then
+                        done = pcall(conn.Function)
+                    end
+
+                    fired = fired or done
+                end
+
+                if fired then
+                    return true, "getconnections"
+                end
+            end
+        end
+    end
+
+    -- Fallback: настоящий виртуальный клик в центр кнопки.
+    local pos = button.AbsolutePosition
+    local size = button.AbsoluteSize
+
+    local x = math.floor(pos.X + size.X / 2)
+    local y = math.floor(pos.Y + size.Y / 2)
+
+    local ok = pcall(function()
+        VirtualInputManager:SendMouseMoveEvent(
+            x,
+            y,
+            game
+        )
+
+        task.wait(0.04)
+
+        VirtualInputManager:SendMouseButtonEvent(
+            x,
+            y,
+            0,
+            true,
+            game,
+            0
+        )
+
+        task.wait(0.05)
+
+        VirtualInputManager:SendMouseButtonEvent(
+            x,
+            y,
+            0,
+            false,
+            game,
+            0
+        )
+    end)
+
+    return ok, "virtual click"
+end
+
+local lastRebirthAttempt = 0
+local rebirthBusy = false
+
+local function tryAutoRebirth()
+    if rebirthBusy or not state.autoRebirth then
         return
     end
 
-    lastUnlockedStage = stage
+    local ready, current, maxValue, source =
+        getLevelReadyState()
 
-    if state.autoFarm then
-        setFarmStatus(
-            "Этап " ..
-            tostring(stage) ..
-            " ЗАСЧИТАН ✓"
+    if not ready then
+        if current and maxValue then
+            setAutoStatus(
+                string.format(
+                    "Уровень %d / %d // ждём 100%%",
+                    current,
+                    maxValue
+                )
+            )
+        else
+            setAutoStatus(
+                state.antiAfk
+                and "Ждём 100% // Anti-AFK активен"
+                or "Ждём 100%"
+            )
+        end
+
+        return
+    end
+
+    if os.clock() - lastRebirthAttempt < 2.0 then
+        return
+    end
+
+    rebirthBusy = true
+    lastRebirthAttempt = os.clock()
+
+    task.spawn(function()
+        setAutoStatus(
+            "100% ДОСТИГНУТО // ищем «Возрождение»..."
         )
 
-        if stage >= FARM_STOP_STAGE then
-            state.autoFarm = false
-            setFarmStatus("ГОТОВО // этап 75 засчитан")
+        -- Сначала ищем именно кнопку подтверждения.
+        local confirm = findRebirthButton(true)
+
+        if confirm then
+            local ok, method = activateGuiButton(confirm)
+
+            setAutoStatus(
+                ok
+                and ("ПЕРЕРОЖДЕНИЕ ✓ // " .. tostring(method))
+                or "Не удалось нажать кнопку"
+            )
+
+            task.wait(1.5)
+            rebirthBusy = false
             return
         end
 
-        task.delay(0.35, function()
-            if not state.autoFarm then
-                return
+        -- Если окно ещё закрыто — пытаемся открыть его
+        -- через обычную кнопку/иконку Rebirth в GUI.
+        local opener = findRebirthButton(false)
+
+        if opener then
+            local opened = activateGuiButton(opener)
+
+            if opened then
+                setAutoStatus(
+                    "100% // открываем окно перерождения..."
+                )
+
+                task.wait(0.45)
+
+                local confirm2 = findRebirthButton(true)
+
+                if confirm2 then
+                    local ok2, method2 =
+                        activateGuiButton(confirm2)
+
+                    setAutoStatus(
+                        ok2
+                        and ("ПЕРЕРОЖДЕНИЕ ✓ // " .. tostring(method2))
+                        or "Окно открыто, но клик не прошёл"
+                    )
+                else
+                    setAutoStatus(
+                        "100% // окно открыто, кнопка не найдена"
+                    )
+                end
+            else
+                setAutoStatus(
+                    "100% // не удалось открыть окно"
+                )
             end
-
-            local root = getRoot()
-            if not root then
-                return
-            end
-
-            -- Для перехода 74 → 75 используем точную координату пользователя.
-            if stage == 74 then
-                root.CFrame = CFrame.new(TARGET_75)
-                setFarmStatus("74 ✓ // переход на 75")
-                return
-            end
-
-            -- В логах арена идёт почти строго по +Z,
-            -- примерно на 92 studs за обычный этап.
-            local current = root.Position
-            local targetZ =
-                (lastSpawnZ or current.Z) + NEXT_STAGE_STEP
-
-            root.CFrame = CFrame.new(
-                3001.5,
-                math.max(current.Y, 6),
-                targetZ
+        else
+            setAutoStatus(
+                "100% // кнопка Rebirth не найдена в GUI"
             )
+        end
 
-            setFarmStatus(
-                tostring(stage) ..
-                " ✓ // идём на " ..
-                tostring(stage + 1)
-            )
-        end)
-    end
-end))
+        task.wait(1.5)
+        rebirthBusy = false
+    end)
+end
 
 task.spawn(function()
     while alive do
-        if state.autoFarm then
-            local root = getRoot()
-            local enemyId, enemy = getNextEnemy()
-
-            if root and enemy then
-                local pos = enemy.position
-
-                if typeof(pos) == "Vector3" then
-                    local target
-                    local dashActive =
-                        state.pauseForDashChain
-                        and os.clock() < dashChainUntil
-
-                    if not dashActive then
-                        if state.safeFarm then
-                            -- WebShooter Range = 45.
-                            -- Держимся почти строго над ЖИВОЙ позицией моба.
-                            -- 40 studs даёт запас до лимита дальности 45
-                            -- и уводит нас от большинства наземных атак.
-                            target = pos + Vector3.new(
-                                0,
-                                state.airHeight,
-                                0
-                            )
-                        else
-                            target = pos + Vector3.new(0, 0, -7)
-                        end
-
-                        pcall(function()
-                            root.AssemblyLinearVelocity = Vector3.zero
-                            root.AssemblyAngularVelocity = Vector3.zero
-                            root.CFrame = CFrame.new(
-                                target,
-                                pos
-                            )
-                        end)
-                    end
-                end
-
-                performServerAttack()
-
-                setFarmStatus(
-                    string.format(
-                        "АТАКА // %s [%s] // осталось %d // %.1f/с // dash #%d",
-                        enemy.name,
-                        enemyId,
-                        enemyCount(),
-                        acceptedAttackRate,
-                        dashChainCount
-                    )
-                )
-
-                task.wait(0.05)
-            else
-                -- Если волна ещё не заспавнилась, чуть двигаемся вперёд,
-                -- чтобы пересечь триггер следующего этапа.
-                if root and lastUnlockedStage and lastUnlockedStage < 75 then
-                    local current = root.Position
-
-                    if lastSpawnZ
-                        and math.abs(current.Z - lastSpawnZ) < 35
-                    then
-                        root.CFrame = CFrame.new(
-                            3001.5,
-                            math.max(current.Y, 6),
-                            current.Z + 8
-                        )
-                    end
-                end
-
-                task.wait(0.12)
-            end
+        if state.autoRebirth then
+            pcall(tryAutoRebirth)
+            task.wait(0.25)
         else
-            task.wait(0.10)
+            task.wait(0.50)
         end
     end
 end)
 
 -- =========================================================
--- GAME SCANNER 61–75
+-- HARD ANTI-AFK
 -- =========================================================
 
-local scanKeywords = {
-    "stage",
-    "wave",
-    "kill",
-    "mob",
-    "enemy",
-    "trophy",
-    "cup",
-    "battle",
-    "fight",
-    "damage",
-    "attack",
-    "progress",
-    "checkpoint",
-    "zone",
-    "level",
-    "next",
-}
+local antiAfkPulseCount = 0
+local disabledIdleConnections = {}
 
-local function interesting(text)
-    text = string.lower(tostring(text or ""))
-
-    for _, key in ipairs(scanKeywords) do
-        if string.find(text, key, 1, true) then
-            return true
-        end
+local function disableIdleConnections()
+    if type(getconnections) ~= "function" then
+        return
     end
 
-    return false
+    local ok, list = pcall(
+        getconnections,
+        player.Idled
+    )
+
+    if not ok or type(list) ~= "table" then
+        return
+    end
+
+    for _, conn in ipairs(list) do
+        pcall(function()
+            if type(conn.Disable) == "function"
+                and type(conn.Enable) == "function"
+                and not disabledIdleConnections[conn]
+            then
+                conn:Disable()
+                disabledIdleConnections[conn] = true
+            end
+        end)
+    end
 end
 
-local function fullName(obj)
-    local ok, result = pcall(function()
-        return obj:GetFullName()
+restoreIdleConnections = function()
+    for conn in pairs(disabledIdleConnections) do
+        pcall(function()
+            if type(conn.Enable) == "function" then
+                conn:Enable()
+            end
+        end)
+
+        disabledIdleConnections[conn] = nil
+    end
+end
+
+local function antiAfkPulse()
+    if not state.antiAfk then
+        return
+    end
+
+    antiAfkPulseCount += 1
+
+    -- 1) VirtualUser — классический keep-alive.
+    pcall(function()
+        VirtualUser:CaptureController()
+
+        VirtualUser:Button2Down(
+            Vector2.new(0, 0),
+            camera and camera.CFrame or CFrame.new()
+        )
+
+        task.wait(0.04)
+
+        VirtualUser:Button2Up(
+            Vector2.new(0, 0),
+            camera and camera.CFrame or CFrame.new()
+        )
     end)
 
-    return ok and result or tostring(obj)
+    -- 2) Минимальное движение мыши: создаёт реальный input pulse,
+    -- но почти не мешает игре.
+    pcall(function()
+        local mouse = UserInputService:GetMouseLocation()
+
+        VirtualInputManager:SendMouseMoveEvent(
+            math.floor(mouse.X + 1),
+            math.floor(mouse.Y),
+            game
+        )
+
+        task.wait(0.03)
+
+        VirtualInputManager:SendMouseMoveEvent(
+            math.floor(mouse.X),
+            math.floor(mouse.Y),
+            game
+        )
+    end)
+
+    -- 3) Tiny movement для игр с собственным AFK-контролем.
+    -- Позиция возвращается обратно, поэтому игрок не уходит с места.
+    local root = getRoot()
+
+    if root and not state.fly then
+        pcall(function()
+            local original = root.CFrame
+
+            root.CFrame =
+                original *
+                CFrame.new(0.025, 0, 0)
+
+            task.wait(0.035)
+
+            if root and root.Parent then
+                root.CFrame = original
+            end
+        end)
+    end
+
+    disableIdleConnections()
+
+    if state.autoRebirth then
+        setAutoStatus(
+            "AUTO REBIRTH + ANTI-AFK // pulse #" ..
+            tostring(antiAfkPulseCount)
+        )
+    else
+        setAutoStatus(
+            "ANTI-AFK АКТИВЕН // pulse #" ..
+            tostring(antiAfkPulseCount)
+        )
+    end
 end
 
-local function scanGame()
-    local lines = {}
-
-    local function add(...)
-        local parts = {...}
-        for i, v in ipairs(parts) do
-            parts[i] = tostring(v)
-        end
-
-        local line = table.concat(parts, " ")
-        table.insert(lines, line)
-        print("[CYBER SCAN]", line)
+-- На сам Roblox Idled реагируем немедленно.
+addConnection(player.Idled:Connect(function()
+    if state.antiAfk then
+        task.spawn(antiAfkPulse)
     end
-
-    add("===== PLAYER ATTRIBUTES =====")
-
-    for name, value in pairs(player:GetAttributes()) do
-        if interesting(name) then
-            add(name, "=", value)
-        end
-    end
-
-    local leaderstats = player:FindFirstChild("leaderstats")
-    if leaderstats then
-        add("===== LEADERSTATS =====")
-
-        for _, obj in ipairs(leaderstats:GetChildren()) do
-            if interesting(obj.Name) then
-                local ok, value = pcall(function()
-                    return obj.Value
-                end)
-
-                add(obj.Name, "=", ok and value or "?")
-            end
-        end
-    end
-
-    add("===== REMOTES =====")
-
-    for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            local path = fullName(obj)
-
-            if interesting(path) then
-                add(
-                    "[" .. obj.ClassName .. "]",
-                    path
-                )
-            end
-        end
-    end
-
-    add("===== NPC / HUMANOIDS =====")
-
-    local npcCount = 0
-
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Humanoid") then
-            local model = obj.Parent
-
-            if model
-                and model:IsA("Model")
-                and not isPlayerCharacter(model)
-            then
-                local r = getMobRoot(model)
-
-                if r and r:IsA("BasePart") then
-                    npcCount = npcCount + 1
-
-                    add(
-                        model.Name,
-                        "HP=" .. tostring(math.floor(obj.Health)),
-                        "POS=" ..
-                        string.format(
-                            "%.1f,%.1f,%.1f",
-                            r.Position.X,
-                            r.Position.Y,
-                            r.Position.Z
-                        )
-                    )
-
-                    if npcCount >= 80 then
-                        add("NPC output limited to 80")
-                        break
-                    end
-                end
-            end
-        end
-    end
-
-    local report = table.concat(lines, "\n")
-
-    local copied = false
-
-    if type(setclipboard) == "function" then
-        copied = pcall(setclipboard, report)
-    elseif type(toclipboard) == "function" then
-        copied = pcall(toclipboard, report)
-    end
-
-    setFarmStatus(
-        copied
-        and "Скан готов и скопирован. Пришли текст мне."
-        or "Скан готов. Скопируй вывод Xeno Console."
-    )
-end
-
-addConnection(scanBtn.MouseButton1Click:Connect(function()
-    setFarmStatus("Сканируем игру...")
-    task.spawn(scanGame)
 end))
+
+-- И дополнительно даём активность заранее,
+-- не дожидаясь стандартного idle timeout.
+task.spawn(function()
+    while alive do
+        if state.antiAfk then
+            antiAfkPulse()
+            task.wait(22)
+        else
+            task.wait(1)
+        end
+    end
+end)
 
 -- =========================================================
 -- COORDINATES
@@ -1714,7 +1731,9 @@ local function shutdown()
     state.fly = false
     state.autoClick = false
     state.infiniteJump = false
-    state.autoFarm = false
+    state.autoRebirth = false
+    state.antiAfk = false
+    restoreIdleConnections()
 
     local humanoid = getHumanoid()
     local root = getRoot()
@@ -1765,5 +1784,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V7 RU] Loaded")
-print("[CYBER PANEL V7 RU] All functions OFF")
+print("[CYBER PANEL V8 RU] Loaded")
+print("[CYBER PANEL V8 RU] All functions OFF")
