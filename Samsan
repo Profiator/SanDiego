@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V5 RU
+    CYBER PANEL V7 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -35,10 +35,8 @@ local EnemySpawned = Remotes:WaitForChild("EnemySpawned")
 local EnemyDied = Remotes:WaitForChild("EnemyDied")
 local StageUnlocked = Remotes:WaitForChild("StageUnlocked")
 local AttackStarted = Remotes:WaitForChild("AttackStarted")
-
-local ReviveChoice = Remotes:WaitForChild("ReviveChoice")
-local ReviveSessionStarted = Remotes:WaitForChild("ReviveSessionStarted")
-local ReviveResolved = Remotes:WaitForChild("ReviveResolved")
+local EnemyStateUpdate = Remotes:WaitForChild("EnemyStateUpdate")
+local PlayerDashChain = Remotes:WaitForChild("PlayerDashChain")
 local camera = workspace.CurrentCamera
 
 local TARGET_75 = Vector3.new(3002.57, 4.19, 1527.89)
@@ -60,10 +58,9 @@ local state = {
     autoFarm = false,
     farmRadius = 2500,
 
-    turboAttack = false,
-    turboInterval = 0.05,
     safeFarm = true,
-    autoRevenge = true,
+    airHeight = 40,
+    pauseForDashChain = true,
 }
 
 local alive = true
@@ -115,6 +112,7 @@ for _, name in ipairs({
     "CyberPanelV1",
     "CyberPanelV5",
     "CyberPanelV6",
+    "CyberPanelV7",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -196,7 +194,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV6"
+gui.Name = "CyberPanelV7"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -853,7 +851,7 @@ makeLabel(
 
 makeLabel(
     info,
-    "SERVER ATTACK // AUTO REVENGE + SAFE RANGE",
+    "SERVER ATTACK // LIVE POS + AIR SAFE + DASHCHAIN",
     UDim2.fromOffset(9, 23),
     UDim2.new(1, -18, 0, 20),
     7,
@@ -872,14 +870,14 @@ makeToggle(farmRow, false, function(v)
     end
 end)
 
-local revengeRow = makeRow(farmPage, 98, "АВТО МЕСТЬ ПРИ СМЕРТИ")
-makeToggle(revengeRow, true, function(v)
-    state.autoRevenge = v
-end)
-
-local safeRow = makeRow(farmPage, 138, "БЕЗОПАСНАЯ ДИСТАНЦИЯ")
+local safeRow = makeRow(farmPage, 98, "ВОЗДУХ ~40 STUDS")
 makeToggle(safeRow, true, function(v)
     state.safeFarm = v
+end)
+
+local dashRow = makeRow(farmPage, 138, "НЕ МЕШАТЬ DASHCHAIN")
+makeToggle(dashRow, true, function(v)
+    state.pauseForDashChain = v
 end)
 
 local tp75 = makeButton(
@@ -910,7 +908,7 @@ farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 local notes = makeLabel(
     farmPage,
-    "V5: если сервер открывает обычное окно смерти Stage, скрипт автоматически выбирает «Месть» и просит сервер убить оставшихся врагов.",
+    "V7: позиция мобов обновляется через EnemyStateUpdate. В воздухе держим ~40 studs — внутри WebShooter Range 45. PlayerDashChain не перебиваем телепортом.",
     UDim2.fromOffset(4, 258),
     UDim2.new(1, -8, 0, 66),
     7,
@@ -943,6 +941,11 @@ local NEXT_STAGE_STEP = 92
 local acceptedAttackCount = 0
 local acceptedAttackRate = 0
 local acceptedWindowStart = os.clock()
+
+local dashChainUntil = 0
+local lastDashChainAt = nil
+local dashChainInterval = nil
+local dashChainCount = 0
 
 addConnection(AttackStarted.OnClientEvent:Connect(function()
     acceptedAttackCount += 1
@@ -1023,6 +1026,77 @@ addConnection(EnemySpawned.OnClientEvent:Connect(function(
     end
 end))
 
+-- Live positions: spawn position is not enough because mobs move.
+addConnection(EnemyStateUpdate.OnClientEvent:Connect(function(
+    enemyId,
+    position,
+    healthPercent,
+    ...
+)
+    enemyId = tostring(enemyId)
+
+    local data = activeEnemies[enemyId]
+    if data and typeof(position) == "Vector3" then
+        data.position = position
+        data.healthPercent = tonumber(healthPercent) or data.healthPercent
+        data.lastStateAt = os.clock()
+        lastSpawnZ = position.Z
+    end
+end))
+
+-- PlayerDashChain is server -> client.
+-- We do NOT fake it; we only avoid teleporting during the real chain,
+-- because the server is already applying Melee LaserHit to several targets.
+addConnection(PlayerDashChain.OnClientEvent:Connect(function(payload)
+    local now = os.clock()
+
+    dashChainCount += 1
+
+    if lastDashChainAt then
+        dashChainInterval = now - lastDashChainAt
+    end
+
+    lastDashChainAt = now
+
+    local lungeTime = 0.18
+    local targetCount = 1
+
+    if type(payload) == "table" then
+        if tonumber(payload.LungeTime) then
+            lungeTime = tonumber(payload.LungeTime)
+        end
+
+        if type(payload.Targets) == "table" then
+            targetCount = math.max(#payload.Targets, 1)
+        end
+    end
+
+    local duration =
+        math.clamp(
+            targetCount * lungeTime + 0.45,
+            0.55,
+            2.50
+        )
+
+    dashChainUntil = now + duration
+
+    if state.autoFarm then
+        local intervalText =
+            dashChainInterval
+            and string.format(" // %.1fs", dashChainInterval)
+            or ""
+
+        setFarmStatus(
+            string.format(
+                "DASHCHAIN #%d // целей %d%s",
+                dashChainCount,
+                targetCount,
+                intervalText
+            )
+        )
+    end
+end))
+
 addConnection(EnemyDied.OnClientEvent:Connect(function(enemyId)
     enemyId = tostring(enemyId)
 
@@ -1057,8 +1131,6 @@ addConnection(StageUnlocked.OnClientEvent:Connect(function(groupId, stageNumber)
 
         if stage >= FARM_STOP_STAGE then
             state.autoFarm = false
-    state.turboAttack = false
-    state.autoRevenge = false
             setFarmStatus("ГОТОВО // этап 75 засчитан")
             return
         end
@@ -1112,33 +1184,46 @@ task.spawn(function()
 
                 if typeof(pos) == "Vector3" then
                     local target
+                    local dashActive =
+                        state.pauseForDashChain
+                        and os.clock() < dashChainUntil
 
-                    if state.safeFarm then
-                        -- WebShooter Range = 45.
-                        -- Держимся примерно в 40 studs от цели:
-                        -- 38 по Z + 10 вверх ≈ 39.3 studs.
-                        target = pos + Vector3.new(0, 10, -38)
-                    else
-                        target = pos + Vector3.new(0, 0, -7)
+                    if not dashActive then
+                        if state.safeFarm then
+                            -- WebShooter Range = 45.
+                            -- Держимся почти строго над ЖИВОЙ позицией моба.
+                            -- 40 studs даёт запас до лимита дальности 45
+                            -- и уводит нас от большинства наземных атак.
+                            target = pos + Vector3.new(
+                                0,
+                                state.airHeight,
+                                0
+                            )
+                        else
+                            target = pos + Vector3.new(0, 0, -7)
+                        end
+
+                        pcall(function()
+                            root.AssemblyLinearVelocity = Vector3.zero
+                            root.AssemblyAngularVelocity = Vector3.zero
+                            root.CFrame = CFrame.new(
+                                target,
+                                pos
+                            )
+                        end)
                     end
-
-                    pcall(function()
-                        root.CFrame = CFrame.new(
-                            target,
-                            pos
-                        )
-                    end)
                 end
 
                 performServerAttack()
 
                 setFarmStatus(
                     string.format(
-                        "АТАКА // %s [%s] // осталось %d // принято %.1f/с",
+                        "АТАКА // %s [%s] // осталось %d // %.1f/с // dash #%d",
                         enemy.name,
                         enemyId,
                         enemyCount(),
-                        acceptedAttackRate
+                        acceptedAttackRate,
+                        dashChainCount
                     )
                 )
 
@@ -1152,9 +1237,11 @@ task.spawn(function()
                     if lastSpawnZ
                         and math.abs(current.Z - lastSpawnZ) < 35
                     then
-                        root.CFrame =
-                            root.CFrame *
-                            CFrame.new(0, 0, -6)
+                        root.CFrame = CFrame.new(
+                            3001.5,
+                            math.max(current.Y, 6),
+                            current.Z + 8
+                        )
                     end
                 end
 
@@ -1165,77 +1252,6 @@ task.spawn(function()
         end
     end
 end)
-
--- =========================================================
--- AUTO REVENGE ON STAGE DEATH
--- =========================================================
-
-local reviveSessionActive = false
-local reviveSessionMode = nil
-local lastRevengeAt = 0
-
-addConnection(ReviveSessionStarted.OnClientEvent:Connect(function(mode)
-    reviveSessionActive = true
-    reviveSessionMode = mode or "Stage"
-
-    if not state.autoFarm or not state.autoRevenge then
-        return
-    end
-
-    -- В Boss / Endless клиент показывает Robux-продукты.
-    -- Для автофарма 61–75 используем только обычный Stage,
-    -- чтобы не инициировать платную механику.
-    if reviveSessionMode ~= "Stage" then
-        setFarmStatus(
-            "Смерть // режим " ..
-            tostring(reviveSessionMode) ..
-            " // авто-месть пропущена"
-        )
-        return
-    end
-
-    setFarmStatus("СМЕРТЬ // AUTO МЕСТЬ...")
-
-    task.delay(0.12, function()
-        if not alive
-            or not state.autoFarm
-            or not state.autoRevenge
-            or not reviveSessionActive
-        then
-            return
-        end
-
-        if os.clock() - lastRevengeAt < 1 then
-            return
-        end
-
-        lastRevengeAt = os.clock()
-
-        local ok, err = pcall(function()
-            ReviveChoice:FireServer("Revenge")
-        end)
-
-        if ok then
-            setFarmStatus(
-                "МЕСТЬ отправлена // ждём ReviveResolved / StageUnlocked"
-            )
-        else
-            setFarmStatus(
-                "Ошибка МЕСТИ: " .. tostring(err)
-            )
-        end
-    end)
-end))
-
-addConnection(ReviveResolved.OnClientEvent:Connect(function(...)
-    reviveSessionActive = false
-
-    if state.autoFarm then
-        setFarmStatus(
-            "МЕСТЬ/ВОЗРОЖДЕНИЕ подтверждено // продолжаем"
-        )
-    end
-end))
 
 -- =========================================================
 -- GAME SCANNER 61–75
@@ -1749,5 +1765,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V6 RU] Loaded")
-print("[CYBER PANEL V6 RU] All functions OFF")
+print("[CYBER PANEL V7 RU] Loaded")
+print("[CYBER PANEL V7 RU] All functions OFF")
