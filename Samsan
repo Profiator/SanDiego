@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V8 RU
+    CYBER PANEL V9 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -33,6 +33,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes")
 local RequestAttack = Remotes:WaitForChild("RequestAttack")
 local PlayerClick = Remotes:WaitForChild("PlayerClick")
+local RequestRebirth = Remotes:WaitForChild("RequestRebirth")
 local camera = workspace.CurrentCamera
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -105,6 +106,7 @@ for _, name in ipairs({
     "CyberPanelV6",
     "CyberPanelV7",
     "CyberPanelV8",
+    "CyberPanelV9",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -186,7 +188,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV8"
+gui.Name = "CyberPanelV9"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -900,7 +902,7 @@ autoStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 makeLabel(
     autoPage,
-    "Автоперерождение нажимает только обычную бесплатную кнопку «Возрождение». Платный AUTO_REBIRTH не используется.",
+    "Автоперерождение использует точный RequestRebirth:InvokeServer() из обычной бесплатной кнопки игры. Платный AUTO_REBIRTH не используется.",
     UDim2.fromOffset(4, 220),
     UDim2.new(1, -8, 0, 58),
     7,
@@ -919,364 +921,159 @@ makeLabel(
 ).TextWrapped = true
 
 -- =========================================================
--- GUI HELPERS FOR AUTO REBIRTH
+-- EXACT AUTO REBIRTH
+-- Scanner confirmed:
+--   ReplicatedStorage.Shared.Remotes.RequestRebirth
+--   RequestRebirth:InvokeServer()
+--
+-- Progress source confirmed:
+--   PlayerGui.ScreenGui.LeftSide.Container.MenuButtons.Rebirth.Progress
+--   Text = "100%"
 -- =========================================================
 
-local function normalizeGuiText(value)
-    local s = string.lower(tostring(value or ""))
-    s = s:gsub("%s+", " ")
-    return s
-end
-
-local function isGuiVisible(obj)
-    if not obj or not obj:IsA("GuiObject") then
-        return false
-    end
-
-    if obj.AbsoluteSize.X < 2 or obj.AbsoluteSize.Y < 2 then
-        return false
-    end
-
-    local current = obj
-
-    while current and current ~= playerGui do
-        if current:IsA("GuiObject") and not current.Visible then
-            return false
-        end
-
-        if current:IsA("LayerCollector") and not current.Enabled then
-            return false
-        end
-
-        current = current.Parent
-    end
-
-    return true
-end
-
-local function getButtonText(button)
-    local parts = {}
-
-    if button:IsA("TextButton") then
-        parts[#parts + 1] = button.Text
-    end
-
-    parts[#parts + 1] = button.Name
-
-    for _, obj in ipairs(button:GetDescendants()) do
-        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-            parts[#parts + 1] = obj.Text
-        end
-    end
-
-    return normalizeGuiText(table.concat(parts, " "))
-end
-
-local function parseInteger(text)
-    local digits = tostring(text or ""):gsub("%D", "")
-
-    if digits == "" then
+local function getRebirthProgressLabel()
+    local screenGui = playerGui:FindFirstChild("ScreenGui")
+    if not screenGui then
         return nil
     end
 
-    return tonumber(digits)
+    local leftSide = screenGui:FindFirstChild("LeftSide")
+    local container = leftSide and leftSide:FindFirstChild("Container")
+    local menuButtons = container and container:FindFirstChild("MenuButtons")
+    local rebirth = menuButtons and menuButtons:FindFirstChild("Rebirth")
+    local progress = rebirth and rebirth:FindFirstChild("Progress")
+
+    if progress and progress:IsA("TextLabel") then
+        return progress
+    end
+
+    return nil
 end
 
-local function getLevelReadyState()
-    local foundCurrent = nil
-    local foundMax = nil
+local function parseProgressPercent(textValue)
+    local numberText =
+        tostring(textValue or "")
+        :match("([%d%.]+)%s*%%")
 
-    for _, obj in ipairs(playerGui:GetDescendants()) do
-        if (obj:IsA("TextLabel") or obj:IsA("TextButton"))
-            and isGuiVisible(obj)
-        then
-            local raw = tostring(obj.Text or "")
-            local low = normalizeGuiText(raw)
+    local value = tonumber(numberText)
 
-            -- Прямой индикатор "МАКСИМАЛЬНЫЙ УРОВЕНЬ".
-            if string.find(low, "максимальн", 1, true)
-                or string.find(low, "max level", 1, true)
-                or string.find(low, "maximum level", 1, true)
-            then
-                return true, nil, nil, "MAX LEVEL"
-            end
-
-            -- Формат из окна: "Уровень 15650 / 15650".
-            if string.find(low, "уров", 1, true)
-                or string.find(low, "level", 1, true)
-            then
-                local left, right =
-                    raw:match("([%d%s,%.]+)%s*/%s*([%d%s,%.]+)")
-
-                if left and right then
-                    local current = parseInteger(left)
-                    local maxValue = parseInteger(right)
-
-                    if current and maxValue and maxValue > 0 then
-                        foundCurrent = current
-                        foundMax = maxValue
-
-                        if current >= maxValue then
-                            return true, current, maxValue, "LEVEL RATIO"
-                        end
-                    end
-                end
-            end
-        end
+    if not value then
+        return nil
     end
 
-    return false, foundCurrent, foundMax, "WAIT"
-end
-
-local function findRebirthButton(confirmOnly)
-    local best = nil
-    local bestScore = -1
-
-    for _, obj in ipairs(playerGui:GetDescendants()) do
-        if (obj:IsA("TextButton") or obj:IsA("ImageButton"))
-            and isGuiVisible(obj)
-        then
-            local text = getButtonText(obj)
-
-            local isSkip =
-                string.find(text, "пропуст", 1, true)
-                or string.find(text, "skip", 1, true)
-
-            if not isSkip then
-                local score = 0
-
-                if string.find(text, "возрожд", 1, true) then
-                    score += 100
-                end
-
-                if string.find(text, "rebirth", 1, true) then
-                    score += 90
-                end
-
-                if not confirmOnly
-                    and string.find(text, "перерожд", 1, true)
-                then
-                    score += 50
-                end
-
-                -- Название GUI-объекта тоже учитываем.
-                local name = normalizeGuiText(obj.Name)
-
-                if string.find(name, "rebirth", 1, true)
-                    or string.find(name, "prestige", 1, true)
-                then
-                    score += 45
-                end
-
-                if confirmOnly
-                    and score < 90
-                then
-                    score = 0
-                end
-
-                if score > bestScore and score > 0 then
-                    best = obj
-                    bestScore = score
-                end
-            end
-        end
-    end
-
-    return best, bestScore
-end
-
-local function activateGuiButton(button)
-    if not button or not button.Parent then
-        return false, "button missing"
-    end
-
-    -- Xeno поддерживает getconnections. Сначала используем
-    -- реальный клиентский callback кнопки, если он доступен.
-    if type(getconnections) == "function" then
-        for _, signal in ipairs({
-            button.Activated,
-            button.MouseButton1Click,
-        }) do
-            local ok, list = pcall(getconnections, signal)
-
-            if ok and type(list) == "table" and #list > 0 then
-                local fired = false
-
-                for _, conn in ipairs(list) do
-                    local done = false
-
-                    if type(conn.Fire) == "function" then
-                        done = pcall(function()
-                            conn:Fire()
-                        end)
-                    elseif type(conn.Function) == "function" then
-                        done = pcall(conn.Function)
-                    end
-
-                    fired = fired or done
-                end
-
-                if fired then
-                    return true, "getconnections"
-                end
-            end
-        end
-    end
-
-    -- Fallback: настоящий виртуальный клик в центр кнопки.
-    local pos = button.AbsolutePosition
-    local size = button.AbsoluteSize
-
-    local x = math.floor(pos.X + size.X / 2)
-    local y = math.floor(pos.Y + size.Y / 2)
-
-    local ok = pcall(function()
-        VirtualInputManager:SendMouseMoveEvent(
-            x,
-            y,
-            game
-        )
-
-        task.wait(0.04)
-
-        VirtualInputManager:SendMouseButtonEvent(
-            x,
-            y,
-            0,
-            true,
-            game,
-            0
-        )
-
-        task.wait(0.05)
-
-        VirtualInputManager:SendMouseButtonEvent(
-            x,
-            y,
-            0,
-            false,
-            game,
-            0
-        )
-    end)
-
-    return ok, "virtual click"
+    return value
 end
 
 local lastRebirthAttempt = 0
 local rebirthBusy = false
+local rebirthArmed = true
+local rebirthSuccessCount = 0
 
-local function tryAutoRebirth()
+local function callRequestRebirth()
     if rebirthBusy or not state.autoRebirth then
         return
     end
 
-    local ready, current, maxValue, source =
-        getLevelReadyState()
-
-    if not ready then
-        if current and maxValue then
-            setAutoStatus(
-                string.format(
-                    "Уровень %d / %d // ждём 100%%",
-                    current,
-                    maxValue
-                )
-            )
-        else
-            setAutoStatus(
-                state.antiAfk
-                and "Ждём 100% // Anti-AFK активен"
-                or "Ждём 100%"
-            )
-        end
-
-        return
-    end
-
-    if os.clock() - lastRebirthAttempt < 2.0 then
+    if os.clock() - lastRebirthAttempt < 1.0 then
         return
     end
 
     rebirthBusy = true
     lastRebirthAttempt = os.clock()
 
+    setAutoStatus(
+        "100% // RequestRebirth:InvokeServer()..."
+    )
+
     task.spawn(function()
-        setAutoStatus(
-            "100% ДОСТИГНУТО // ищем «Возрождение»..."
-        )
+        local ok, success, message = pcall(function()
+            return RequestRebirth:InvokeServer()
+        end)
 
-        -- Сначала ищем именно кнопку подтверждения.
-        local confirm = findRebirthButton(true)
-
-        if confirm then
-            local ok, method = activateGuiButton(confirm)
-
+        if not ok then
             setAutoStatus(
-                ok
-                and ("ПЕРЕРОЖДЕНИЕ ✓ // " .. tostring(method))
-                or "Не удалось нажать кнопку"
+                "REBIRTH ERROR // " .. tostring(success)
             )
-
-            task.wait(1.5)
             rebirthBusy = false
             return
         end
 
-        -- Если окно ещё закрыто — пытаемся открыть его
-        -- через обычную кнопку/иконку Rebirth в GUI.
-        local opener = findRebirthButton(false)
+        if success then
+            rebirthSuccessCount += 1
+            rebirthArmed = false
 
-        if opener then
-            local opened = activateGuiButton(opener)
-
-            if opened then
-                setAutoStatus(
-                    "100% // открываем окно перерождения..."
-                )
-
-                task.wait(0.45)
-
-                local confirm2 = findRebirthButton(true)
-
-                if confirm2 then
-                    local ok2, method2 =
-                        activateGuiButton(confirm2)
-
-                    setAutoStatus(
-                        ok2
-                        and ("ПЕРЕРОЖДЕНИЕ ✓ // " .. tostring(method2))
-                        or "Окно открыто, но клик не прошёл"
-                    )
-                else
-                    setAutoStatus(
-                        "100% // окно открыто, кнопка не найдена"
-                    )
-                end
-            else
-                setAutoStatus(
-                    "100% // не удалось открыть окно"
-                )
-            end
+            setAutoStatus(
+                "ПЕРЕРОЖДЕНИЕ ✓ // #" ..
+                tostring(rebirthSuccessCount)
+            )
         else
             setAutoStatus(
-                "100% // кнопка Rebirth не найдена в GUI"
+                "REBIRTH ОТКЛОНЁН // " ..
+                tostring(message or "без сообщения")
             )
         end
 
-        task.wait(1.5)
+        task.wait(0.60)
         rebirthBusy = false
     end)
 end
 
 task.spawn(function()
     while alive do
-        if state.autoRebirth then
-            pcall(tryAutoRebirth)
-            task.wait(0.25)
-        else
-            task.wait(0.50)
+        if not state.autoRebirth then
+            task.wait(0.40)
+            continue
         end
+
+        local progress = getRebirthProgressLabel()
+
+        if not progress then
+            setAutoStatus(
+                state.antiAfk
+                and "Progress не найден // Anti-AFK активен"
+                or "Progress не найден"
+            )
+
+            task.wait(0.50)
+            continue
+        end
+
+        local percent =
+            parseProgressPercent(progress.Text)
+
+        if not percent then
+            setAutoStatus(
+                "Progress: " ..
+                tostring(progress.Text)
+            )
+
+            task.wait(0.35)
+            continue
+        end
+
+        -- После успешного rebirth ждём, пока прогресс реально
+        -- упадёт ниже 100%, чтобы не отправлять запрос повторно.
+        if percent < 100 then
+            rebirthArmed = true
+
+            setAutoStatus(
+                string.format(
+                    "REBIRTH %d%% // ждём 100%%%s",
+                    math.floor(percent),
+                    state.antiAfk
+                        and " // Anti-AFK"
+                        or ""
+                )
+            )
+        elseif rebirthArmed and not rebirthBusy then
+            callRequestRebirth()
+        else
+            setAutoStatus(
+                "100% // ждём сброс после перерождения"
+            )
+        end
+
+        task.wait(0.15)
     end
 end)
 
@@ -1784,5 +1581,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V8 RU] Loaded")
-print("[CYBER PANEL V8 RU] All functions OFF")
+print("[CYBER PANEL V9 RU] Loaded")
+print("[CYBER PANEL V9 RU] All functions OFF")
