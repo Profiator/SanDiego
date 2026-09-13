@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V10 RU
+    CYBER PANEL V11 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -18,6 +18,8 @@
       • Маршрут по точкам с индивидуальным таймером
       • Редактирование координат и времени прямо в меню
       • Добавление / удаление новых точек
+      • После сундука ждёт, пока ИГРА сама вернёт на старт
+      • После возврата снова идёт с точки 1
       • Зацикливание маршрута
 
     Автоперерождение использует обычную бесплатную кнопку
@@ -124,6 +126,7 @@ for _, name in ipairs({
     "CyberPanelV8",
     "CyberPanelV9",
     "CyberPanelV10",
+    "CyberPanelV11",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -205,7 +208,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV10"
+gui.Name = "CyberPanelV11"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -1276,8 +1279,10 @@ local routeStart = Vector3.new(
     94.00
 )
 
--- После точки 13 маршрут по умолчанию начинается снова с точки 1.
--- Это соответствует повтору точек 1–12 из исходного маршрута.
+-- Точка с isChest=true — получение сундука.
+-- После неё скрипт НЕ телепортирует на старт сам:
+-- он ждёт, пока игра сама вернёт персонажа к routeStart,
+-- и только после этого снова начинает с точки 1.
 local routePoints = {
     {
         name = "1",
@@ -1342,7 +1347,8 @@ local routePoints = {
     {
         name = "13 СУНДУК",
         pos = Vector3.new(4487.94, 4.75, 1288.67),
-        wait = 2.0
+        wait = 0.25,
+        isChest = true
     },
 }
 
@@ -1368,7 +1374,7 @@ makeLabel(
 
 makeLabel(
     farmInfo,
-    "СТАРТ → 1…13 → 1…13 → ...",
+    "СТАРТ → 1…СУНДУК → ждём TP игры → 1…",
     UDim2.fromOffset(9, 22),
     UDim2.new(1, -18, 0, 18),
     7,
@@ -1385,7 +1391,7 @@ local farmToggleRow = makeRow(
 local loopRow = makeRow(
     farmPage,
     96,
-    "ЦИКЛ ПО КРУГУ"
+    "ПОВТОР ПОСЛЕ TP НА СТАРТ"
 )
 
 local farmToggleControl = nil
@@ -1407,8 +1413,8 @@ loopToggleControl = makeToggle(loopRow, true, function(v)
     if state.routeFarm then
         setFarmStatus(
             v
-            and "Цикл включён"
-            or "Цикл выключен // остановка после последней точки"
+            and "Повтор ВКЛ // после сундука ждём TP игры"
+            or "Повтор ВЫКЛ // один проход"
         )
     end
 end)
@@ -1578,7 +1584,7 @@ local function makeRouteRow(index, data)
         UDim2.fromOffset(5, 0),
         UDim2.fromOffset(42, 32),
         7,
-        index == 13 and C.green or C.text,
+        data.isChest and C.green or C.text,
         Enum.Font.GothamBold
     )
 
@@ -1686,13 +1692,8 @@ rebuildRouteRows = function()
     table.clear(routeRows)
 
     for i, data in ipairs(routePoints) do
-        -- Нумерацию обновляем, но имя сундука сохраняем.
-        if string.find(
-            tostring(data.name or ""),
-            "СУНДУК",
-            1,
-            true
-        ) then
+        -- Сундук остаётся специальной точкой даже после добавления новых.
+        if data.isChest then
             data.name = tostring(i) .. " СУНДУК"
         else
             data.name = tostring(i)
@@ -1762,17 +1763,32 @@ addConnection(addCurrentBtn.MouseButton1Click:Connect(function()
 
     seconds = math.clamp(seconds, 0.05, 120)
 
-    routePoints[#routePoints + 1] = {
-        name = tostring(#routePoints + 1),
-        pos = root.Position,
-        wait = seconds
-    }
+    local insertIndex = #routePoints + 1
+
+    for i, data in ipairs(routePoints) do
+        if data.isChest then
+            insertIndex = i
+            break
+        end
+    end
+
+    table.insert(
+        routePoints,
+        insertIndex,
+        {
+            name = tostring(insertIndex),
+            pos = root.Position,
+            wait = seconds,
+            isChest = false
+        }
+    )
 
     rebuildRouteRows()
 
     setFarmStatus(
         "Добавлена точка #" ..
-        tostring(#routePoints)
+        tostring(insertIndex) ..
+        " // перед сундуком"
     )
 end))
 
@@ -1789,7 +1805,7 @@ end))
 
 farmStatusLabel = makeLabel(
     farmPage,
-    "Готово // точек: " .. tostring(#routePoints),
+    "Готово // таймеры редактируются // новые точки вставляются перед сундуком",
     UDim2.fromOffset(2, 340),
     UDim2.new(1, -4, 0, 25),
     7,
@@ -1803,7 +1819,9 @@ farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
 -- ROUTE FARM ENGINE
 -- ---------------------------------------------------------
 
-local function holdAtPoint(pos, seconds, pointIndex)
+local START_DETECT_RADIUS = 22
+
+local function holdAtPoint(pos, seconds, pointIndex, label)
     local finishAt =
         os.clock() + math.max(0.05, tonumber(seconds) or 0.05)
 
@@ -1826,7 +1844,8 @@ local function holdAtPoint(pos, seconds, pointIndex)
 
         setFarmStatus(
             string.format(
-                "ТОЧКА %d/%d // %.1f сек",
+                "%s %d/%d // %.1f сек",
+                label or "ТОЧКА",
                 pointIndex,
                 #routePoints,
                 remaining
@@ -1835,6 +1854,115 @@ local function holdAtPoint(pos, seconds, pointIndex)
 
         task.wait(0.08)
     end
+end
+
+local function distanceToStart()
+    local root = getRoot()
+
+    if not root then
+        return math.huge
+    end
+
+    return (root.Position - routeStart).Magnitude
+end
+
+local function waitForGameTeleportToStart()
+    -- Здесь специально НЕТ CFrame/телепорта:
+    -- после сундука даём игре самой вернуть игрока на старт.
+    setFarmStatus(
+        "СУНДУК ПОЛУЧЕН // ждём TP игры на старт..."
+    )
+
+    local wasFarFromStart = distanceToStart() > START_DETECT_RADIUS
+
+    while alive
+        and state.routeFarm
+        and state.routeLoop
+    do
+        local dist = distanceToStart()
+
+        if dist < math.huge then
+            setFarmStatus(
+                string.format(
+                    "ЖДЁМ TP ИГРЫ // до старта %.0f studs",
+                    dist
+                )
+            )
+        end
+
+        -- Защита от ложного старта:
+        -- сначала должны реально быть далеко от стартовой точки,
+        -- затем игра должна вернуть нас в радиус START_DETECT_RADIUS.
+        if dist > START_DETECT_RADIUS * 2 then
+            wasFarFromStart = true
+        end
+
+        if wasFarFromStart and dist <= START_DETECT_RADIUS then
+            setFarmStatus(
+                "ИГРА ВЕРНУЛА НА СТАРТ ✓ // снова точка 1"
+            )
+
+            -- Небольшая пауза, чтобы сервер/персонаж успели стабилизироваться.
+            task.wait(0.25)
+            return true
+        end
+
+        task.wait(0.10)
+    end
+
+    return false
+end
+
+local function runRouteOnce()
+    for i, data in ipairs(routePoints) do
+        if not alive or not state.routeFarm then
+            return false, "stopped"
+        end
+
+        if data.isChest then
+            -- В сундук телепортируем только один раз.
+            -- Короткий редактируемый wait нужен лишь для срабатывания триггера.
+            safeTeleport(data.pos)
+
+            holdAtPoint(
+                data.pos,
+                data.wait,
+                i,
+                "СУНДУК"
+            )
+
+            if not state.routeFarm then
+                return false, "stopped"
+            end
+
+            -- Если повтор выключен, на этом один проход закончен.
+            if not state.routeLoop then
+                return true, "finished"
+            end
+
+            -- Главное изменение V11:
+            -- не телепортируем сами, а ждём возврат, который делает игра.
+            local returned =
+                waitForGameTeleportToStart()
+
+            if not returned then
+                return false, "stopped"
+            end
+
+            return true, "returned_to_start"
+        else
+            safeTeleport(data.pos)
+
+            holdAtPoint(
+                data.pos,
+                data.wait,
+                i,
+                "ТОЧКА"
+            )
+        end
+    end
+
+    return true, "finished_no_chest"
 end
 
 task.spawn(function()
@@ -1853,10 +1981,11 @@ task.spawn(function()
 
         syncStartFromBox()
 
-        setFarmStatus("СТАРТ // телепорт...")
+        -- Только при ПЕРВОМ запуске автофарма мы сами ставим игрока на старт.
+        -- После сундука возврат на старт выполняет игра.
+        setFarmStatus("ПЕРВЫЙ СТАРТ // телепорт...")
         safeTeleport(routeStart)
 
-        -- Короткая фиксация стартовой позиции.
         local startUntil = os.clock() + 0.35
 
         while alive
@@ -1871,53 +2000,37 @@ task.spawn(function()
             continue
         end
 
-        local completed = true
+        while alive and state.routeFarm do
+            local ok, reason = runRouteOnce()
 
-        for i, data in ipairs(routePoints) do
-            if not alive or not state.routeFarm then
-                completed = false
+            if not ok then
                 break
             end
 
-            safeTeleport(data.pos)
-            holdAtPoint(
-                data.pos,
-                data.wait,
-                i
-            )
-        end
-
-        if not completed or not state.routeFarm then
-            continue
-        end
-
-        if state.routeLoop then
-            -- Повторяем уже с точки 1, без возврата на старт.
-            while alive and state.routeFarm and state.routeLoop do
-                for i, data in ipairs(routePoints) do
-                    if not alive
-                        or not state.routeFarm
-                        or not state.routeLoop
-                    then
-                        break
-                    end
-
-                    safeTeleport(data.pos)
-                    holdAtPoint(
-                        data.pos,
-                        data.wait,
-                        i
-                    )
-                end
-            end
-
-            if state.routeFarm and not state.routeLoop then
+            if not state.routeLoop then
                 state.routeFarm = false
-                setFarmStatus("Цикл выключен // остановлено")
+                setFarmStatus("МАРШРУТ ЗАВЕРШЁН // один проход")
+                break
             end
-        else
-            state.routeFarm = false
-            setFarmStatus("МАРШРУТ ЗАВЕРШЁН")
+
+            if reason == "returned_to_start" then
+                -- Уже на старте благодаря игре.
+                -- Сразу начинаем новый круг с точки 1.
+                setFarmStatus("НОВЫЙ КРУГ // стартуем с точки 1")
+                task.wait(0.15)
+            elseif reason == "finished_no_chest" then
+                -- Если сундук удалили вручную, просто повторяем маршрут.
+                setFarmStatus("НОВЫЙ КРУГ // сундук в маршруте не найден")
+                task.wait(0.15)
+            else
+                break
+            end
+        end
+
+        -- Не позволяем внешнему while мгновенно повторно запускать
+        -- "первый старт", если пользователь сам не выключил/включил тумблер.
+        while alive and state.routeFarm do
+            task.wait(0.25)
         end
     end
 end)
@@ -2282,5 +2395,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V10 RU] Loaded")
-print("[CYBER PANEL V10 RU] All functions OFF")
+print("[CYBER PANEL V11 RU] Loaded")
+print("[CYBER PANEL V11 RU] All functions OFF")
