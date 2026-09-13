@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V19 RU
+    CYBER PANEL V20 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -135,6 +135,7 @@ for _, name in ipairs({
     "CyberPanelV17",
     "CyberPanelV18",
     "CyberPanelV19",
+    "CyberPanelV20",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -219,7 +220,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV19"
+gui.Name = "CyberPanelV20"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -1632,7 +1633,7 @@ end))
 
 local addCard = Instance.new("Frame")
 addCard.Position = UDim2.fromOffset(0, 155)
-addCard.Size = UDim2.new(1, 0, 0, 63)
+addCard.Size = UDim2.new(1, 0, 0, 94)
 addCard.BackgroundColor3 = C.panel
 addCard.BorderSizePixel = 0
 addCard.Parent = farmPage
@@ -1652,7 +1653,7 @@ makeLabel(
 
 local addNameBox = Instance.new("TextBox")
 addNameBox.Position = UDim2.fromOffset(8, 26)
-addNameBox.Size = UDim2.fromOffset(105, 29)
+addNameBox.Size = UDim2.fromOffset(125, 29)
 addNameBox.BackgroundColor3 = C.panel2
 addNameBox.BorderSizePixel = 0
 addNameBox.ClearTextOnFocus = false
@@ -1667,8 +1668,8 @@ addNameBox.ZIndex = 25
 round(addNameBox, 4)
 
 local addCoordBox = Instance.new("TextBox")
-addCoordBox.Position = UDim2.fromOffset(119, 26)
-addCoordBox.Size = UDim2.new(1, -355, 0, 29)
+addCoordBox.Position = UDim2.fromOffset(139, 26)
+addCoordBox.Size = UDim2.new(1, -335, 0, 29)
 addCoordBox.BackgroundColor3 = C.panel2
 addCoordBox.BorderSizePixel = 0
 addCoordBox.ClearTextOnFocus = false
@@ -1684,7 +1685,7 @@ addCoordBox.ZIndex = 25
 round(addCoordBox, 4)
 
 local addWaitBox = Instance.new("TextBox")
-addWaitBox.Position = UDim2.new(1, -230, 0, 26)
+addWaitBox.Position = UDim2.new(1, -190, 0, 26)
 addWaitBox.Size = UDim2.fromOffset(50, 29)
 addWaitBox.BackgroundColor3 = C.panel2
 addWaitBox.BorderSizePixel = 0
@@ -1701,8 +1702,8 @@ round(addWaitBox, 4)
 local fillCurrentBtn = makeButton(
     addCard,
     "POS",
-    UDim2.new(1, -174, 0, 26),
-    UDim2.fromOffset(45, 29)
+    UDim2.new(1, -134, 0, 26),
+    UDim2.fromOffset(58, 29)
 )
 fillCurrentBtn.TextSize = 17
 fillCurrentBtn.ZIndex = 25
@@ -1710,15 +1711,17 @@ fillCurrentBtn.Active = true
 
 local addPointBtn = makeButton(
     addCard,
-    "+ ДОБАВИТЬ",
-    UDim2.new(1, -123, 0, 26),
-    UDim2.fromOffset(115, 29)
+    "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ",
+    UDim2.fromOffset(8, 60),
+    UDim2.new(1, -16, 0, 27)
 )
-addPointBtn.TextSize = 17
-addPointBtn.ZIndex = 30
+addPointBtn.TextSize = 15
+addPointBtn.ZIndex = 50
 addPointBtn.Active = true
 addPointBtn.Selectable = true
 addPointBtn.AutoButtonColor = true
+addPointBtn.BackgroundColor3 = C.text
+addPointBtn.TextColor3 = C.bg
 
 addConnection(fillCurrentBtn.MouseButton1Click:Connect(function()
     local root = getRoot()
@@ -1736,7 +1739,7 @@ end))
 makeLabel(
     farmPage,
     "ПОРЯДОК ЛОКАЦИЙ // ↑ ↓ меняют порядок // POS = текущие координаты",
-    UDim2.fromOffset(4, 224),
+    UDim2.fromOffset(4, 255),
     UDim2.new(1, -8, 0, 18),
     17,
     C.muted,
@@ -1744,8 +1747,8 @@ makeLabel(
 )
 
 local routeScroll = Instance.new("ScrollingFrame")
-routeScroll.Position = UDim2.fromOffset(0, 246)
-routeScroll.Size = UDim2.new(1, 0, 0, 275)
+routeScroll.Position = UDim2.fromOffset(0, 277)
+routeScroll.Size = UDim2.new(1, 0, 0, 244)
 routeScroll.BackgroundColor3 = C.panel
 routeScroll.BorderSizePixel = 0
 routeScroll.ScrollBarThickness = 5
@@ -2117,7 +2120,7 @@ local function addNewRoutePoint()
         addPointBtn.Text = "СТОП ФАРМ"
         task.delay(0.8, function()
             if addPointBtn and addPointBtn.Parent then
-                addPointBtn.Text = "+ ДОБАВИТЬ"
+                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
             end
         end)
         addPointBusy = false
@@ -2132,7 +2135,7 @@ local function addNewRoutePoint()
 
         task.delay(0.8, function()
             if addPointBtn and addPointBtn.Parent then
-                addPointBtn.Text = "+ ДОБАВИТЬ"
+                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
             end
         end)
 
@@ -2185,7 +2188,7 @@ local function addNewRoutePoint()
         )
     )
 
-    addPointBtn.Text = "ДОБАВЛЕНО ✓"
+    addPointBtn.Text = "ДОБАВЛЕНО ✓ // ТОЧКА #" .. tostring(insertIndex)
 
     -- Оставляем время, а имя/координаты очищаем для следующей точки.
     addNameBox.Text = ""
@@ -2193,7 +2196,7 @@ local function addNewRoutePoint()
 
     task.delay(0.9, function()
         if addPointBtn and addPointBtn.Parent then
-            addPointBtn.Text = "+ ДОБАВИТЬ"
+            addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
         end
     end)
 
@@ -2227,6 +2230,85 @@ addConnection(
 addConnection(
     addCoordBox.FocusLost:Connect(function(enterPressed)
         if enterPressed then
+            addNewRoutePoint()
+        end
+    end)
+)
+
+-- =========================================================
+-- HARD INPUT FALLBACK
+--
+-- Иногда Xeno/CoreGui визуально показывает кнопку, но Roblox
+-- не отдаёт ей Activated/MouseButton1Click. Поэтому дополнительно
+-- ловим ГЛОБАЛЬНЫЙ клик мыши/тап и сами проверяем, попал ли он
+-- в абсолютный прямоугольник кнопки.
+--
+-- Это не зависит от того, какой GuiObject оказался сверху.
+-- =========================================================
+
+local function pointInsideGui(guiObject, point)
+    if not guiObject
+        or not guiObject.Parent
+        or not guiObject.Visible
+    then
+        return false
+    end
+
+    local pos = guiObject.AbsolutePosition
+    local size = guiObject.AbsoluteSize
+
+    return point.X >= pos.X
+        and point.X <= pos.X + size.X
+        and point.Y >= pos.Y
+        and point.Y <= pos.Y + size.Y
+end
+
+addConnection(
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if not farmPage.Visible then
+            return
+        end
+
+        local isPrimary =
+            input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch
+
+        if not isPrimary then
+            return
+        end
+
+        local point
+
+        if input.UserInputType == Enum.UserInputType.Touch then
+            point = Vector2.new(
+                input.Position.X,
+                input.Position.Y
+            )
+        else
+            point = UserInputService:GetMouseLocation()
+        end
+
+        if pointInsideGui(addPointBtn, point) then
+            setFarmStatus("HARD CLICK ✓ // добавляем...")
+
+            -- task.defer нужен, чтобы TextBox успел отпустить фокус.
+            task.defer(function()
+                addNewRoutePoint()
+            end)
+        end
+    end)
+)
+
+-- Клавиатурный резерв: F6 добавляет заполненную точку,
+-- когда открыта вкладка АВТОФАРМ.
+addConnection(
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed or not farmPage.Visible then
+            return
+        end
+
+        if input.KeyCode == Enum.KeyCode.F6 then
+            setFarmStatus("F6 ✓ // добавляем...")
             addNewRoutePoint()
         end
     end)
@@ -2887,5 +2969,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V19 RU] Loaded")
-print("[CYBER PANEL V19 RU] All functions OFF")
+print("[CYBER PANEL V20 RU] Loaded")
+print("[CYBER PANEL V20 RU] All functions OFF")
