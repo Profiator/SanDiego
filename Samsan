@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V18 RU
+    CYBER PANEL V19 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -134,6 +134,7 @@ for _, name in ipairs({
     "CyberPanelV16",
     "CyberPanelV17",
     "CyberPanelV18",
+    "CyberPanelV19",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -218,7 +219,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV18"
+gui.Name = "CyberPanelV19"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -1635,6 +1636,7 @@ addCard.Size = UDim2.new(1, 0, 0, 63)
 addCard.BackgroundColor3 = C.panel
 addCard.BorderSizePixel = 0
 addCard.Parent = farmPage
+addCard.ZIndex = 20
 round(addCard, 5)
 addStroke(addCard, C.cyanDim, 0.38)
 
@@ -1661,11 +1663,12 @@ addNameBox.PlaceholderColor3 = C.muted
 addNameBox.TextSize = 17
 addNameBox.Font = Enum.Font.GothamMedium
 addNameBox.Parent = addCard
+addNameBox.ZIndex = 25
 round(addNameBox, 4)
 
 local addCoordBox = Instance.new("TextBox")
 addCoordBox.Position = UDim2.fromOffset(119, 26)
-addCoordBox.Size = UDim2.new(1, -330, 0, 29)
+addCoordBox.Size = UDim2.new(1, -355, 0, 29)
 addCoordBox.BackgroundColor3 = C.panel2
 addCoordBox.BorderSizePixel = 0
 addCoordBox.ClearTextOnFocus = false
@@ -1677,10 +1680,11 @@ addCoordBox.TextSize = 17
 addCoordBox.Font = Enum.Font.Code
 addCoordBox.TextXAlignment = Enum.TextXAlignment.Left
 addCoordBox.Parent = addCard
+addCoordBox.ZIndex = 25
 round(addCoordBox, 4)
 
 local addWaitBox = Instance.new("TextBox")
-addWaitBox.Position = UDim2.new(1, -205, 0, 26)
+addWaitBox.Position = UDim2.new(1, -230, 0, 26)
 addWaitBox.Size = UDim2.fromOffset(50, 29)
 addWaitBox.BackgroundColor3 = C.panel2
 addWaitBox.BorderSizePixel = 0
@@ -1691,25 +1695,30 @@ addWaitBox.TextColor3 = C.text
 addWaitBox.TextSize = 17
 addWaitBox.Font = Enum.Font.Code
 addWaitBox.Parent = addCard
+addWaitBox.ZIndex = 25
 round(addWaitBox, 4)
 
 local fillCurrentBtn = makeButton(
     addCard,
     "POS",
-    UDim2.new(1, -149, 0, 26),
+    UDim2.new(1, -174, 0, 26),
     UDim2.fromOffset(45, 29)
 )
 fillCurrentBtn.TextSize = 17
+fillCurrentBtn.ZIndex = 25
+fillCurrentBtn.Active = true
 
 local addPointBtn = makeButton(
     addCard,
     "+ ДОБАВИТЬ",
-    UDim2.new(1, -98, 0, 26),
-    UDim2.fromOffset(90, 29)
+    UDim2.new(1, -123, 0, 26),
+    UDim2.fromOffset(115, 29)
 )
 addPointBtn.TextSize = 17
+addPointBtn.ZIndex = 30
 addPointBtn.Active = true
 addPointBtn.Selectable = true
+addPointBtn.AutoButtonColor = true
 
 addConnection(fillCurrentBtn.MouseButton1Click:Connect(function()
     local root = getRoot()
@@ -2053,6 +2062,7 @@ rebuildRouteRows()
 -- ---------------------------------------------------------
 
 local addPointBusy = false
+local lastAddRequestAt = 0
 
 local function scrollToRouteIndex(index)
     task.defer(function()
@@ -2091,10 +2101,15 @@ local function scrollToRouteIndex(index)
 end
 
 local function addNewRoutePoint()
-    if addPointBusy then
+    local now = os.clock()
+
+    -- Один физический клик может вызвать MouseButton1Down,
+    -- MouseButton1Click и Activated. Не даём добавить три раза.
+    if addPointBusy or (now - lastAddRequestAt) < 0.35 then
         return
     end
 
+    lastAddRequestAt = now
     addPointBusy = true
 
     if state.routeFarm then
@@ -2185,11 +2200,27 @@ local function addNewRoutePoint()
     addPointBusy = false
 end
 
--- Activated надёжнее MouseButton1Click для GUI-кнопок.
+-- Xeno/Roblox UI: в разных сборках один из сигналов может
+-- не доходить до CoreGui. Подключаем несколько, но debounce
+-- выше гарантирует только одно добавление за клик.
+
 addConnection(
-    addPointBtn.Activated:Connect(
-        addNewRoutePoint
-    )
+    addPointBtn.MouseButton1Down:Connect(function()
+        setFarmStatus("КЛИК ✓ // добавляем точку...")
+        task.defer(addNewRoutePoint)
+    end)
+)
+
+addConnection(
+    addPointBtn.MouseButton1Click:Connect(function()
+        addNewRoutePoint()
+    end)
+)
+
+addConnection(
+    addPointBtn.Activated:Connect(function()
+        addNewRoutePoint()
+    end)
 )
 
 -- Enter в поле координат тоже добавляет точку.
@@ -2856,5 +2887,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V18 RU] Loaded")
-print("[CYBER PANEL V18 RU] All functions OFF")
+print("[CYBER PANEL V19 RU] Loaded")
+print("[CYBER PANEL V19 RU] All functions OFF")
