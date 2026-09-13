@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V9 RU
+    CYBER PANEL V10 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -13,6 +13,12 @@
     Вкладка "АВТО":
       • Автоперерождение при 100% / максимальном уровне
       • Жёсткий Anti-AFK
+
+    Вкладка "АВТОФАРМ":
+      • Маршрут по точкам с индивидуальным таймером
+      • Редактирование координат и времени прямо в меню
+      • Добавление / удаление новых точек
+      • Зацикливание маршрута
 
     Автоперерождение использует обычную бесплатную кнопку
     "Возрождение" интерфейса игры. Платное AUTO_REBIRTH не используется.
@@ -53,6 +59,9 @@ local state = {
 
     autoRebirth = false,
     antiAfk = false,
+
+    routeFarm = false,
+    routeLoop = true,
 }
 
 local alive = true
@@ -60,6 +69,7 @@ local connections = {}
 local originalCollisions = {}
 local originalWalkSpeed = nil
 local autoStatusLabel = nil
+local farmStatusLabel = nil
 
 local function addConnection(c)
     table.insert(connections, c)
@@ -86,6 +96,12 @@ local function setAutoStatus(text)
     end
 end
 
+local function setFarmStatus(text)
+    if farmStatusLabel and farmStatusLabel.Parent then
+        farmStatusLabel.Text = tostring(text)
+    end
+end
+
 -- =========================================================
 -- GUI PARENT / CLEANUP
 -- =========================================================
@@ -107,6 +123,7 @@ for _, name in ipairs({
     "CyberPanelV7",
     "CyberPanelV8",
     "CyberPanelV9",
+    "CyberPanelV10",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -188,7 +205,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV9"
+gui.Name = "CyberPanelV10"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -287,15 +304,25 @@ local charTab = makeButton(
     tabs,
     "ПЕРСОНАЖ",
     UDim2.fromOffset(0, 0),
-    UDim2.new(0.5, -3, 1, 0)
+    UDim2.new(0.3333, -4, 1, 0)
 )
+charTab.TextSize = 8
 
 local autoTab = makeButton(
     tabs,
     "АВТО",
-    UDim2.new(0.5, 3, 0, 0),
-    UDim2.new(0.5, -3, 1, 0)
+    UDim2.new(0.3333, 2, 0, 0),
+    UDim2.new(0.3333, -4, 1, 0)
 )
+autoTab.TextSize = 8
+
+local farmTab = makeButton(
+    tabs,
+    "АВТОФАРМ",
+    UDim2.new(0.6666, 4, 0, 0),
+    UDim2.new(0.3334, -4, 1, 0)
+)
+farmTab.TextSize = 8
 
 local charPage = Instance.new("Frame")
 charPage.Position = UDim2.fromOffset(10, 126)
@@ -310,17 +337,30 @@ autoPage.BackgroundTransparency = 1
 autoPage.Visible = false
 autoPage.Parent = main
 
+local farmPage = Instance.new("Frame")
+farmPage.Position = charPage.Position
+farmPage.Size = charPage.Size
+farmPage.BackgroundTransparency = 1
+farmPage.Visible = false
+farmPage.Parent = main
+
 local function setTab(name)
     local charActive = name == "CHAR"
+    local autoActive = name == "AUTO"
+    local farmActive = name == "FARM"
 
     charPage.Visible = charActive
-    autoPage.Visible = not charActive
+    autoPage.Visible = autoActive
+    farmPage.Visible = farmActive
 
     charTab.BackgroundColor3 = charActive and C.cyan or C.panel2
     charTab.TextColor3 = charActive and C.bg or C.text
 
-    autoTab.BackgroundColor3 = not charActive and C.cyan or C.panel2
-    autoTab.TextColor3 = not charActive and C.bg or C.text
+    autoTab.BackgroundColor3 = autoActive and C.cyan or C.panel2
+    autoTab.TextColor3 = autoActive and C.bg or C.text
+
+    farmTab.BackgroundColor3 = farmActive and C.cyan or C.panel2
+    farmTab.TextColor3 = farmActive and C.bg or C.text
 end
 
 setTab("CHAR")
@@ -331,6 +371,10 @@ end))
 
 addConnection(autoTab.MouseButton1Click:Connect(function()
     setTab("AUTO")
+end))
+
+addConnection(farmTab.MouseButton1Click:Connect(function()
+    setTab("FARM")
 end))
 
 -- =========================================================
@@ -1223,6 +1267,662 @@ task.spawn(function()
 end)
 
 -- =========================================================
+-- AUTOFARM ROUTE EDITOR
+-- =========================================================
+
+local routeStart = Vector3.new(
+    4501.50,
+    4.64,
+    94.00
+)
+
+-- После точки 13 маршрут по умолчанию начинается снова с точки 1.
+-- Это соответствует повтору точек 1–12 из исходного маршрута.
+local routePoints = {
+    {
+        name = "1",
+        pos = Vector3.new(4502.38, 4.65, 165.43),
+        wait = 2.0
+    },
+    {
+        name = "2",
+        pos = Vector3.new(4501.55, 4.65, 258.91),
+        wait = 2.0
+    },
+    {
+        name = "3",
+        pos = Vector3.new(4500.93, 4.65, 340.21),
+        wait = 2.5
+    },
+    {
+        name = "4",
+        pos = Vector3.new(4501.12, 4.19, 449.74),
+        wait = 2.0
+    },
+    {
+        name = "5",
+        pos = Vector3.new(4501.92, 4.19, 545.81),
+        wait = 2.0
+    },
+    {
+        name = "6",
+        pos = Vector3.new(4501.32, 4.19, 636.50),
+        wait = 2.5
+    },
+    {
+        name = "7",
+        pos = Vector3.new(4500.84, 4.19, 740.20),
+        wait = 2.0
+    },
+    {
+        name = "8",
+        pos = Vector3.new(4500.70, 4.19, 832.43),
+        wait = 2.0
+    },
+    {
+        name = "9",
+        pos = Vector3.new(4503.82, 4.19, 929.81),
+        wait = 2.5
+    },
+    {
+        name = "10",
+        pos = Vector3.new(4502.91, 4.19, 1034.80),
+        wait = 2.5
+    },
+    {
+        name = "11",
+        pos = Vector3.new(4503.25, 4.19, 1144.19),
+        wait = 2.5
+    },
+    {
+        name = "12",
+        pos = Vector3.new(4500.22, 4.19, 1219.71),
+        wait = 3.5
+    },
+    {
+        name = "13 СУНДУК",
+        pos = Vector3.new(4487.94, 4.75, 1288.67),
+        wait = 2.0
+    },
+}
+
+local farmInfo = Instance.new("Frame")
+farmInfo.Position = UDim2.fromOffset(0, 0)
+farmInfo.Size = UDim2.new(1, 0, 0, 50)
+farmInfo.BackgroundColor3 = C.panel
+farmInfo.BackgroundTransparency = 0.08
+farmInfo.BorderSizePixel = 0
+farmInfo.Parent = farmPage
+round(farmInfo, 7)
+addStroke(farmInfo, C.cyanDim, 0.65)
+
+makeLabel(
+    farmInfo,
+    "МАРШРУТНЫЙ АВТОФАРМ",
+    UDim2.fromOffset(9, 2),
+    UDim2.new(1, -18, 0, 18),
+    9,
+    C.cyan,
+    Enum.Font.GothamBold
+)
+
+makeLabel(
+    farmInfo,
+    "СТАРТ → 1…13 → 1…13 → ...",
+    UDim2.fromOffset(9, 22),
+    UDim2.new(1, -18, 0, 18),
+    7,
+    C.muted,
+    Enum.Font.Code
+)
+
+local farmToggleRow = makeRow(
+    farmPage,
+    57,
+    "АВТОФАРМ МАРШРУТ"
+)
+
+local loopRow = makeRow(
+    farmPage,
+    96,
+    "ЦИКЛ ПО КРУГУ"
+)
+
+local farmToggleControl = nil
+local loopToggleControl = nil
+
+farmToggleControl = makeToggle(farmToggleRow, false, function(v)
+    state.routeFarm = v
+
+    if v then
+        setFarmStatus("ЗАПУСК // телепорт на старт...")
+    else
+        setFarmStatus("ОСТАНОВЛЕНО")
+    end
+end)
+
+loopToggleControl = makeToggle(loopRow, true, function(v)
+    state.routeLoop = v
+
+    if state.routeFarm then
+        setFarmStatus(
+            v
+            and "Цикл включён"
+            or "Цикл выключен // остановка после последней точки"
+        )
+    end
+end)
+
+local startBox = Instance.new("TextBox")
+startBox.Position = UDim2.fromOffset(0, 136)
+startBox.Size = UDim2.new(1, -70, 0, 28)
+startBox.BackgroundColor3 = C.panel2
+startBox.BackgroundTransparency = 0.02
+startBox.BorderSizePixel = 0
+startBox.ClearTextOnFocus = false
+startBox.Text = "4501.50, 4.64, 94.00"
+startBox.PlaceholderText = "Старт X, Y, Z"
+startBox.TextColor3 = C.text
+startBox.PlaceholderColor3 = C.muted
+startBox.TextSize = 8
+startBox.Font = Enum.Font.Code
+startBox.TextXAlignment = Enum.TextXAlignment.Left
+startBox.Parent = farmPage
+round(startBox, 6)
+addStroke(startBox, C.cyanDim, 0.62)
+
+local startTpBtn = makeButton(
+    farmPage,
+    "ТП СТАРТ",
+    UDim2.new(1, -65, 0, 136),
+    UDim2.fromOffset(65, 28)
+)
+startTpBtn.TextSize = 7
+
+local function parseXYZ(raw)
+    local nums = {}
+
+    for token in string.gmatch(
+        tostring(raw or ""),
+        "[-+]?%d*%.?%d+"
+    ) do
+        local n = tonumber(token)
+
+        if n then
+            nums[#nums + 1] = n
+            if #nums == 3 then
+                break
+            end
+        end
+    end
+
+    if #nums < 3 then
+        return nil
+    end
+
+    return Vector3.new(
+        nums[1],
+        nums[2],
+        nums[3]
+    )
+end
+
+local function safeTeleport(pos)
+    local root = getRoot()
+
+    if not root or typeof(pos) ~= "Vector3" then
+        return false
+    end
+
+    local ok = pcall(function()
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.CFrame = CFrame.new(pos)
+    end)
+
+    return ok
+end
+
+local function syncStartFromBox()
+    local parsed = parseXYZ(startBox.Text)
+
+    if parsed then
+        routeStart = parsed
+        startBox.Text = string.format(
+            "%.2f, %.2f, %.2f",
+            parsed.X,
+            parsed.Y,
+            parsed.Z
+        )
+        return true
+    end
+
+    return false
+end
+
+addConnection(startBox.FocusLost:Connect(function()
+    if not syncStartFromBox() then
+        startBox.Text = string.format(
+            "%.2f, %.2f, %.2f",
+            routeStart.X,
+            routeStart.Y,
+            routeStart.Z
+        )
+    end
+end))
+
+addConnection(startTpBtn.MouseButton1Click:Connect(function()
+    syncStartFromBox()
+    safeTeleport(routeStart)
+    setFarmStatus("ТП на старт")
+end))
+
+local listTitle = makeLabel(
+    farmPage,
+    "ТОЧКИ // координаты можно менять",
+    UDim2.fromOffset(2, 169),
+    UDim2.new(1, -4, 0, 17),
+    7,
+    C.muted,
+    Enum.Font.Code
+)
+
+local routeScroll = Instance.new("ScrollingFrame")
+routeScroll.Position = UDim2.fromOffset(0, 188)
+routeScroll.Size = UDim2.new(1, 0, 0, 111)
+routeScroll.BackgroundColor3 = C.panel
+routeScroll.BackgroundTransparency = 0.08
+routeScroll.BorderSizePixel = 0
+routeScroll.ScrollBarThickness = 4
+routeScroll.ScrollBarImageColor3 = C.cyan
+routeScroll.CanvasSize = UDim2.fromOffset(0, 0)
+routeScroll.AutomaticCanvasSize = Enum.AutomaticSize.None
+routeScroll.Parent = farmPage
+round(routeScroll, 7)
+addStroke(routeScroll, C.cyanDim, 0.65)
+
+local routeListLayout = Instance.new("UIListLayout")
+routeListLayout.Padding = UDim.new(0, 3)
+routeListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+routeListLayout.Parent = routeScroll
+
+local routeRows = {}
+
+local function updateCanvas()
+    task.defer(function()
+        if routeListLayout and routeListLayout.Parent then
+            routeScroll.CanvasSize = UDim2.fromOffset(
+                0,
+                routeListLayout.AbsoluteContentSize.Y + 6
+            )
+        end
+    end)
+end
+
+local rebuildRouteRows
+
+local function makeRouteRow(index, data)
+    local row = Instance.new("Frame")
+    row.Name = "Point_" .. tostring(index)
+    row.Size = UDim2.new(1, -6, 0, 32)
+    row.BackgroundColor3 = C.panel2
+    row.BackgroundTransparency = 0.03
+    row.BorderSizePixel = 0
+    row.LayoutOrder = index
+    row.Parent = routeScroll
+    round(row, 5)
+
+    local nameLabel = makeLabel(
+        row,
+        tostring(data.name or index),
+        UDim2.fromOffset(5, 0),
+        UDim2.fromOffset(42, 32),
+        7,
+        index == 13 and C.green or C.text,
+        Enum.Font.GothamBold
+    )
+
+    local coordInput = Instance.new("TextBox")
+    coordInput.Position = UDim2.fromOffset(45, 4)
+    coordInput.Size = UDim2.new(1, -132, 0, 24)
+    coordInput.BackgroundColor3 = C.bg
+    coordInput.BackgroundTransparency = 0.18
+    coordInput.BorderSizePixel = 0
+    coordInput.ClearTextOnFocus = false
+    coordInput.Text = string.format(
+        "%.2f, %.2f, %.2f",
+        data.pos.X,
+        data.pos.Y,
+        data.pos.Z
+    )
+    coordInput.TextColor3 = C.text
+    coordInput.TextSize = 7
+    coordInput.Font = Enum.Font.Code
+    coordInput.TextXAlignment = Enum.TextXAlignment.Left
+    coordInput.Parent = row
+    round(coordInput, 4)
+
+    local waitInput = Instance.new("TextBox")
+    waitInput.Position = UDim2.new(1, -82, 0, 4)
+    waitInput.Size = UDim2.fromOffset(45, 24)
+    waitInput.BackgroundColor3 = C.bg
+    waitInput.BackgroundTransparency = 0.18
+    waitInput.BorderSizePixel = 0
+    waitInput.ClearTextOnFocus = false
+    waitInput.Text = string.format("%.1f", tonumber(data.wait) or 2)
+    waitInput.PlaceholderText = "сек"
+    waitInput.TextColor3 = C.green
+    waitInput.TextSize = 7
+    waitInput.Font = Enum.Font.Code
+    waitInput.Parent = row
+    round(waitInput, 4)
+
+    local deleteBtn = makeButton(
+        row,
+        "×",
+        UDim2.new(1, -32, 0, 4),
+        UDim2.fromOffset(27, 24)
+    )
+    deleteBtn.BackgroundColor3 = C.red
+    deleteBtn.TextSize = 11
+
+    addConnection(coordInput.FocusLost:Connect(function()
+        local parsed = parseXYZ(coordInput.Text)
+
+        if parsed then
+            data.pos = parsed
+            coordInput.Text = string.format(
+                "%.2f, %.2f, %.2f",
+                parsed.X,
+                parsed.Y,
+                parsed.Z
+            )
+        else
+            coordInput.Text = string.format(
+                "%.2f, %.2f, %.2f",
+                data.pos.X,
+                data.pos.Y,
+                data.pos.Z
+            )
+        end
+    end))
+
+    addConnection(waitInput.FocusLost:Connect(function()
+        local value = tonumber(
+            tostring(waitInput.Text):gsub(",", ".")
+        )
+
+        if value then
+            data.wait = math.clamp(value, 0.05, 120)
+        end
+
+        waitInput.Text = string.format(
+            "%.1f",
+            tonumber(data.wait) or 2
+        )
+    end))
+
+    addConnection(deleteBtn.MouseButton1Click:Connect(function()
+        if state.routeFarm then
+            setFarmStatus("Сначала останови автофарм")
+            return
+        end
+
+        table.remove(routePoints, index)
+        rebuildRouteRows()
+        setFarmStatus("Точка удалена")
+    end))
+
+    routeRows[index] = row
+end
+
+rebuildRouteRows = function()
+    for _, row in pairs(routeRows) do
+        if row and row.Parent then
+            row:Destroy()
+        end
+    end
+
+    table.clear(routeRows)
+
+    for i, data in ipairs(routePoints) do
+        -- Нумерацию обновляем, но имя сундука сохраняем.
+        if string.find(
+            tostring(data.name or ""),
+            "СУНДУК",
+            1,
+            true
+        ) then
+            data.name = tostring(i) .. " СУНДУК"
+        else
+            data.name = tostring(i)
+        end
+
+        makeRouteRow(i, data)
+    end
+
+    updateCanvas()
+end
+
+addConnection(routeListLayout:GetPropertyChangedSignal(
+    "AbsoluteContentSize"
+):Connect(updateCanvas))
+
+rebuildRouteRows()
+
+local addCurrentBtn = makeButton(
+    farmPage,
+    "+ ТЕКУЩАЯ ТОЧКА",
+    UDim2.fromOffset(0, 306),
+    UDim2.new(0.55, -3, 0, 29)
+)
+addCurrentBtn.TextSize = 7
+
+local newTimeBox = Instance.new("TextBox")
+newTimeBox.Position = UDim2.new(0.55, 3, 0, 306)
+newTimeBox.Size = UDim2.new(0.22, -3, 0, 29)
+newTimeBox.BackgroundColor3 = C.panel2
+newTimeBox.BackgroundTransparency = 0.03
+newTimeBox.BorderSizePixel = 0
+newTimeBox.ClearTextOnFocus = false
+newTimeBox.Text = "2.0"
+newTimeBox.PlaceholderText = "сек"
+newTimeBox.TextColor3 = C.green
+newTimeBox.TextSize = 8
+newTimeBox.Font = Enum.Font.Code
+newTimeBox.Parent = farmPage
+round(newTimeBox, 6)
+addStroke(newTimeBox, C.cyanDim, 0.58)
+
+local clearRouteBtn = makeButton(
+    farmPage,
+    "ОЧИСТ.",
+    UDim2.new(0.77, 3, 0, 306),
+    UDim2.new(0.23, -3, 0, 29)
+)
+clearRouteBtn.TextSize = 7
+clearRouteBtn.BackgroundColor3 = C.red
+clearRouteBtn.BackgroundTransparency = 0.20
+
+addConnection(addCurrentBtn.MouseButton1Click:Connect(function()
+    if state.routeFarm then
+        setFarmStatus("Сначала останови автофарм")
+        return
+    end
+
+    local root = getRoot()
+    if not root then
+        setFarmStatus("Персонаж не найден")
+        return
+    end
+
+    local seconds = tonumber(
+        tostring(newTimeBox.Text):gsub(",", ".")
+    ) or 2
+
+    seconds = math.clamp(seconds, 0.05, 120)
+
+    routePoints[#routePoints + 1] = {
+        name = tostring(#routePoints + 1),
+        pos = root.Position,
+        wait = seconds
+    }
+
+    rebuildRouteRows()
+
+    setFarmStatus(
+        "Добавлена точка #" ..
+        tostring(#routePoints)
+    )
+end))
+
+addConnection(clearRouteBtn.MouseButton1Click:Connect(function()
+    if state.routeFarm then
+        setFarmStatus("Сначала останови автофарм")
+        return
+    end
+
+    table.clear(routePoints)
+    rebuildRouteRows()
+    setFarmStatus("Маршрут очищен")
+end))
+
+farmStatusLabel = makeLabel(
+    farmPage,
+    "Готово // точек: " .. tostring(#routePoints),
+    UDim2.fromOffset(2, 340),
+    UDim2.new(1, -4, 0, 25),
+    7,
+    C.muted,
+    Enum.Font.Code
+)
+farmStatusLabel.TextWrapped = true
+farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
+
+-- ---------------------------------------------------------
+-- ROUTE FARM ENGINE
+-- ---------------------------------------------------------
+
+local function holdAtPoint(pos, seconds, pointIndex)
+    local finishAt =
+        os.clock() + math.max(0.05, tonumber(seconds) or 0.05)
+
+    while alive
+        and state.routeFarm
+        and os.clock() < finishAt
+    do
+        local root = getRoot()
+
+        if root then
+            pcall(function()
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = CFrame.new(pos)
+            end)
+        end
+
+        local remaining =
+            math.max(0, finishAt - os.clock())
+
+        setFarmStatus(
+            string.format(
+                "ТОЧКА %d/%d // %.1f сек",
+                pointIndex,
+                #routePoints,
+                remaining
+            )
+        )
+
+        task.wait(0.08)
+    end
+end
+
+task.spawn(function()
+    while alive do
+        if not state.routeFarm then
+            task.wait(0.10)
+            continue
+        end
+
+        if #routePoints == 0 then
+            state.routeFarm = false
+            setFarmStatus("Нет точек в маршруте")
+            task.wait(0.25)
+            continue
+        end
+
+        syncStartFromBox()
+
+        setFarmStatus("СТАРТ // телепорт...")
+        safeTeleport(routeStart)
+
+        -- Короткая фиксация стартовой позиции.
+        local startUntil = os.clock() + 0.35
+
+        while alive
+            and state.routeFarm
+            and os.clock() < startUntil
+        do
+            safeTeleport(routeStart)
+            task.wait(0.07)
+        end
+
+        if not state.routeFarm then
+            continue
+        end
+
+        local completed = true
+
+        for i, data in ipairs(routePoints) do
+            if not alive or not state.routeFarm then
+                completed = false
+                break
+            end
+
+            safeTeleport(data.pos)
+            holdAtPoint(
+                data.pos,
+                data.wait,
+                i
+            )
+        end
+
+        if not completed or not state.routeFarm then
+            continue
+        end
+
+        if state.routeLoop then
+            -- Повторяем уже с точки 1, без возврата на старт.
+            while alive and state.routeFarm and state.routeLoop do
+                for i, data in ipairs(routePoints) do
+                    if not alive
+                        or not state.routeFarm
+                        or not state.routeLoop
+                    then
+                        break
+                    end
+
+                    safeTeleport(data.pos)
+                    holdAtPoint(
+                        data.pos,
+                        data.wait,
+                        i
+                    )
+                end
+            end
+
+            if state.routeFarm and not state.routeLoop then
+                state.routeFarm = false
+                setFarmStatus("Цикл выключен // остановлено")
+            end
+        else
+            state.routeFarm = false
+            setFarmStatus("МАРШРУТ ЗАВЕРШЁН")
+        end
+    end
+end)
+
+-- =========================================================
 -- COORDINATES
 -- =========================================================
 
@@ -1530,6 +2230,7 @@ local function shutdown()
     state.infiniteJump = false
     state.autoRebirth = false
     state.antiAfk = false
+    state.routeFarm = false
     restoreIdleConnections()
 
     local humanoid = getHumanoid()
@@ -1581,5 +2282,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V9 RU] Loaded")
-print("[CYBER PANEL V9 RU] All functions OFF")
+print("[CYBER PANEL V10 RU] Loaded")
+print("[CYBER PANEL V10 RU] All functions OFF")
