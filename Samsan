@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V17 RU
+    CYBER PANEL V18 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -133,6 +133,7 @@ for _, name in ipairs({
     "CyberPanelV15",
     "CyberPanelV16",
     "CyberPanelV17",
+    "CyberPanelV18",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -217,7 +218,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV17"
+gui.Name = "CyberPanelV18"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -1707,6 +1708,8 @@ local addPointBtn = makeButton(
     UDim2.fromOffset(90, 29)
 )
 addPointBtn.TextSize = 17
+addPointBtn.Active = true
+addPointBtn.Selectable = true
 
 addConnection(fillCurrentBtn.MouseButton1Click:Connect(function()
     local root = getRoot()
@@ -2049,16 +2052,76 @@ rebuildRouteRows()
 -- ADD BUTTONS
 -- ---------------------------------------------------------
 
-addConnection(addPointBtn.MouseButton1Click:Connect(function()
+local addPointBusy = false
+
+local function scrollToRouteIndex(index)
+    task.defer(function()
+        task.wait()
+
+        updateCanvas()
+
+        local row = routeRows[index]
+        if not row or not row.Parent then
+            return
+        end
+
+        task.wait()
+
+        local rowTop =
+            row.AbsolutePosition.Y -
+            routeScroll.AbsolutePosition.Y +
+            routeScroll.CanvasPosition.Y
+
+        local targetY = math.max(
+            0,
+            rowTop - 10
+        )
+
+        local maxY = math.max(
+            0,
+            routeScroll.AbsoluteCanvasSize.Y -
+            routeScroll.AbsoluteWindowSize.Y
+        )
+
+        routeScroll.CanvasPosition = Vector2.new(
+            0,
+            math.clamp(targetY, 0, maxY)
+        )
+    end)
+end
+
+local function addNewRoutePoint()
+    if addPointBusy then
+        return
+    end
+
+    addPointBusy = true
+
     if state.routeFarm then
         setFarmStatus("Останови автофарм перед добавлением")
+        addPointBtn.Text = "СТОП ФАРМ"
+        task.delay(0.8, function()
+            if addPointBtn and addPointBtn.Parent then
+                addPointBtn.Text = "+ ДОБАВИТЬ"
+            end
+        end)
+        addPointBusy = false
         return
     end
 
     local pos = parseXYZ(addCoordBox.Text)
 
     if not pos then
-        setFarmStatus("Неверные координаты // формат X, Y, Z")
+        setFarmStatus("ОШИБКА // координаты: X, Y, Z")
+        addPointBtn.Text = "ОШИБКА"
+
+        task.delay(0.8, function()
+            if addPointBtn and addPointBtn.Parent then
+                addPointBtn.Text = "+ ДОБАВИТЬ"
+            end
+        end)
+
+        addPointBusy = false
         return
     end
 
@@ -2072,11 +2135,15 @@ addConnection(addPointBtn.MouseButton1Click:Connect(function()
     name = name:gsub("^%s+", ""):gsub("%s+$", "")
 
     if name == "" then
-        name = "Новая локация"
+        name = "Локация " .. tostring(#routePoints + 1)
     end
 
     local chestIndex = findChestIndex()
-    local insertIndex = chestIndex or (#routePoints + 1)
+
+    -- Если сундук есть — новая точка всегда вставляется прямо перед ним.
+    -- Если сундука нет — добавляется в самый конец.
+    local insertIndex =
+        chestIndex or (#routePoints + 1)
 
     table.insert(
         routePoints,
@@ -2089,15 +2156,50 @@ addConnection(addPointBtn.MouseButton1Click:Connect(function()
         }
     )
 
+    rebuildRouteRows()
+
+    -- Сразу прокручиваем список к новой строке,
+    -- чтобы было визуально видно, что она реально добавилась.
+    scrollToRouteIndex(insertIndex)
+
+    setFarmStatus(
+        string.format(
+            "ДОБАВЛЕНО ✓  #%d  %s",
+            insertIndex,
+            name
+        )
+    )
+
+    addPointBtn.Text = "ДОБАВЛЕНО ✓"
+
+    -- Оставляем время, а имя/координаты очищаем для следующей точки.
     addNameBox.Text = ""
     addCoordBox.Text = ""
 
-    rebuildRouteRows()
+    task.delay(0.9, function()
+        if addPointBtn and addPointBtn.Parent then
+            addPointBtn.Text = "+ ДОБАВИТЬ"
+        end
+    end)
 
-    setFarmStatus(
-        "Добавлено: " .. name
+    addPointBusy = false
+end
+
+-- Activated надёжнее MouseButton1Click для GUI-кнопок.
+addConnection(
+    addPointBtn.Activated:Connect(
+        addNewRoutePoint
     )
-end))
+)
+
+-- Enter в поле координат тоже добавляет точку.
+addConnection(
+    addCoordBox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            addNewRoutePoint()
+        end
+    end)
+)
 
 -- ---------------------------------------------------------
 -- FOOTER / ROUTE MANAGEMENT
@@ -2754,5 +2856,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V17 RU] Loaded")
-print("[CYBER PANEL V17 RU] All functions OFF")
+print("[CYBER PANEL V18 RU] Loaded")
+print("[CYBER PANEL V18 RU] All functions OFF")
