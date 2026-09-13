@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V15 RU
+    CYBER PANEL V17 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -131,6 +131,8 @@ for _, name in ipairs({
     "CyberPanelV13",
     "CyberPanelV14",
     "CyberPanelV15",
+    "CyberPanelV16",
+    "CyberPanelV17",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -200,7 +202,7 @@ local function makeButton(parent, text, pos, size)
     b.AutoButtonColor = false
     b.Text = text
     b.TextColor3 = C.text
-    b.TextSize = 10
+    b.TextSize = 16
     b.Font = Enum.Font.GothamBold
     b.Parent = parent
 
@@ -215,7 +217,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV15"
+gui.Name = "CyberPanelV17"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -248,7 +250,7 @@ makeLabel(
     "BLACK // PANEL",
     UDim2.fromOffset(12, 7),
     UDim2.fromOffset(190, 19),
-    13,
+    16,
     C.text,
     Enum.Font.GothamBold
 )
@@ -269,7 +271,7 @@ local playerLabel = makeLabel(
     "ИГРОК // " .. player.Name,
     UDim2.fromOffset(12, 28),
     UDim2.new(1, -24, 0, 18),
-    9,
+    15,
     C.cyan,
     Enum.Font.GothamBold
 )
@@ -289,7 +291,7 @@ local coordsLabel = makeLabel(
     "X 0.00   Y 0.00   Z 0.00",
     UDim2.fromOffset(9, 0),
     UDim2.new(1, -77, 1, 0),
-    8,
+    17,
     C.text,
     Enum.Font.Code
 )
@@ -317,7 +319,7 @@ local charTab = makeButton(
     UDim2.fromOffset(0, 0),
     UDim2.new(0.3333, -4, 1, 0)
 )
-charTab.TextSize = 10
+charTab.TextSize = 16
 
 local autoTab = makeButton(
     tabs,
@@ -325,7 +327,7 @@ local autoTab = makeButton(
     UDim2.new(0.3333, 2, 0, 0),
     UDim2.new(0.3333, -4, 1, 0)
 )
-autoTab.TextSize = 10
+autoTab.TextSize = 16
 
 local farmTab = makeButton(
     tabs,
@@ -333,7 +335,7 @@ local farmTab = makeButton(
     UDim2.new(0.6666, 4, 0, 0),
     UDim2.new(0.3334, -4, 1, 0)
 )
-farmTab.TextSize = 10
+farmTab.TextSize = 16
 
 local charPage = Instance.new("Frame")
 charPage.Position = UDim2.fromOffset(10, 138)
@@ -409,7 +411,7 @@ local function makeRow(parent, y, text, height)
         text,
         UDim2.fromOffset(9, 0),
         UDim2.new(1, -73, 1, 0),
-        8,
+        17,
         C.text,
         Enum.Font.GothamMedium
     )
@@ -466,7 +468,7 @@ local function makeCompactSlider(parent, y, titleText, minValue, maxValue, initi
         titleText,
         UDim2.fromOffset(9, 2),
         UDim2.new(1, -55, 0, 17),
-        7,
+        16,
         C.muted,
         Enum.Font.GothamBold
     )
@@ -476,7 +478,7 @@ local function makeCompactSlider(parent, y, titleText, minValue, maxValue, initi
         tostring(initialValue),
         UDim2.new(1, -47, 0, 2),
         UDim2.fromOffset(38, 17),
-        8,
+        17,
         C.cyan,
         Enum.Font.Code
     )
@@ -689,7 +691,7 @@ makeLabel(
     "ТЕЛЕПОРТ ПО КООРДИНАТАМ",
     UDim2.fromOffset(9, 2),
     UDim2.new(1, -18, 0, 18),
-    7,
+    16,
     C.muted,
     Enum.Font.GothamBold
 )
@@ -705,7 +707,7 @@ tpInput.PlaceholderText = "-1211.58, 4.19, -895.05"
 tpInput.Text = ""
 tpInput.TextColor3 = C.text
 tpInput.PlaceholderColor3 = C.muted
-tpInput.TextSize = 8
+tpInput.TextSize = 17
 tpInput.Font = Enum.Font.Code
 tpInput.TextXAlignment = Enum.TextXAlignment.Left
 tpInput.Parent = tpBox
@@ -893,7 +895,7 @@ makeLabel(
     "АВТОМАТИЗАЦИЯ",
     UDim2.fromOffset(9, 3),
     UDim2.new(1, -18, 0, 18),
-    9,
+    15,
     C.cyan,
     Enum.Font.GothamBold
 )
@@ -903,7 +905,7 @@ makeLabel(
     "REBIRTH 100% // HARD ANTI-AFK",
     UDim2.fromOffset(9, 25),
     UDim2.new(1, -18, 0, 20),
-    7,
+    16,
     C.muted,
     Enum.Font.Code
 )
@@ -948,7 +950,7 @@ autoStatusLabel = makeLabel(
     "Все функции выключены",
     UDim2.fromOffset(4, 152),
     UDim2.new(1, -8, 0, 58),
-    8,
+    17,
     C.muted,
     Enum.Font.Code
 )
@@ -960,7 +962,7 @@ makeLabel(
     "Автоперерождение использует точный RequestRebirth:InvokeServer() из обычной бесплатной кнопки игры. Платный AUTO_REBIRTH не используется.",
     UDim2.fromOffset(4, 220),
     UDim2.new(1, -8, 0, 58),
-    7,
+    16,
     C.muted,
     Enum.Font.Code
 ).TextWrapped = true
@@ -970,7 +972,7 @@ makeLabel(
     "Anti-AFK: Idled + VirtualUser + mouse pulse + tiny movement. Не защищает от ручного кика админом или разрыва соединения.",
     UDim2.fromOffset(4, 286),
     UDim2.new(1, -8, 0, 62),
-    7,
+    16,
     C.muted,
     Enum.Font.Code
 ).TextWrapped = true
@@ -1452,7 +1454,7 @@ makeLabel(
     "АВТОФАРМ // РЕДАКТОР МАРШРУТА",
     UDim2.fromOffset(12, 3),
     UDim2.new(1, -24, 0, 22),
-    11,
+    17,
     C.text,
     Enum.Font.GothamBold
 )
@@ -1462,7 +1464,7 @@ makeLabel(
     "ДОМ → ЛОКАЦИИ ПО ПОРЯДКУ → СУНДУК → ДОМ → ПОВТОР",
     UDim2.fromOffset(12, 25),
     UDim2.new(1, -24, 0, 18),
-    8,
+    17,
     C.muted,
     Enum.Font.Code
 )
@@ -1485,7 +1487,7 @@ makeLabel(
     "АВТОФАРМ",
     UDim2.fromOffset(10, 0),
     UDim2.new(1, -72, 1, 0),
-    9,
+    15,
     C.text,
     Enum.Font.GothamBold
 )
@@ -1514,7 +1516,7 @@ makeLabel(
     "БЕСКОНЕЧНЫЙ КРУГ",
     UDim2.fromOffset(10, 0),
     UDim2.new(1, -72, 1, 0),
-    9,
+    15,
     C.text,
     Enum.Font.GothamBold
 )
@@ -1547,7 +1549,7 @@ makeLabel(
     "ДОМ",
     UDim2.fromOffset(10, 0),
     UDim2.fromOffset(44, 44),
-    9,
+    15,
     C.text,
     Enum.Font.GothamBold
 )
@@ -1562,7 +1564,7 @@ startBox.Text = formatXYZ(routeStart)
 startBox.PlaceholderText = "X, Y, Z"
 startBox.TextColor3 = C.text
 startBox.PlaceholderColor3 = C.muted
-startBox.TextSize = 9
+startBox.TextSize = 15
 startBox.Font = Enum.Font.Code
 startBox.TextXAlignment = Enum.TextXAlignment.Left
 startBox.Parent = homeCard
@@ -1575,7 +1577,7 @@ local homeCurrentBtn = makeButton(
     UDim2.new(1, -194, 0, 7),
     UDim2.fromOffset(88, 30)
 )
-homeCurrentBtn.TextSize = 8
+homeCurrentBtn.TextSize = 17
 
 local homeTpBtn = makeButton(
     homeCard,
@@ -1583,7 +1585,7 @@ local homeTpBtn = makeButton(
     UDim2.new(1, -100, 0, 7),
     UDim2.fromOffset(90, 30)
 )
-homeTpBtn.TextSize = 8
+homeTpBtn.TextSize = 17
 
 local function syncStartFromBox()
     local parsed = parseXYZ(startBox.Text)
@@ -1640,7 +1642,7 @@ makeLabel(
     "ДОБАВИТЬ ЛОКАЦИЮ",
     UDim2.fromOffset(10, 2),
     UDim2.new(1, -20, 0, 18),
-    8,
+    17,
     C.muted,
     Enum.Font.GothamBold
 )
@@ -1655,7 +1657,7 @@ addNameBox.Text = ""
 addNameBox.PlaceholderText = "Название"
 addNameBox.TextColor3 = C.text
 addNameBox.PlaceholderColor3 = C.muted
-addNameBox.TextSize = 8
+addNameBox.TextSize = 17
 addNameBox.Font = Enum.Font.GothamMedium
 addNameBox.Parent = addCard
 round(addNameBox, 4)
@@ -1670,7 +1672,7 @@ addCoordBox.Text = ""
 addCoordBox.PlaceholderText = "Вставь X, Y, Z"
 addCoordBox.TextColor3 = C.text
 addCoordBox.PlaceholderColor3 = C.muted
-addCoordBox.TextSize = 8
+addCoordBox.TextSize = 17
 addCoordBox.Font = Enum.Font.Code
 addCoordBox.TextXAlignment = Enum.TextXAlignment.Left
 addCoordBox.Parent = addCard
@@ -1685,7 +1687,7 @@ addWaitBox.ClearTextOnFocus = false
 addWaitBox.Text = "2.0"
 addWaitBox.PlaceholderText = "сек"
 addWaitBox.TextColor3 = C.text
-addWaitBox.TextSize = 8
+addWaitBox.TextSize = 17
 addWaitBox.Font = Enum.Font.Code
 addWaitBox.Parent = addCard
 round(addWaitBox, 4)
@@ -1696,7 +1698,7 @@ local fillCurrentBtn = makeButton(
     UDim2.new(1, -149, 0, 26),
     UDim2.fromOffset(45, 29)
 )
-fillCurrentBtn.TextSize = 8
+fillCurrentBtn.TextSize = 17
 
 local addPointBtn = makeButton(
     addCard,
@@ -1704,7 +1706,7 @@ local addPointBtn = makeButton(
     UDim2.new(1, -98, 0, 26),
     UDim2.fromOffset(90, 29)
 )
-addPointBtn.TextSize = 8
+addPointBtn.TextSize = 17
 
 addConnection(fillCurrentBtn.MouseButton1Click:Connect(function()
     local root = getRoot()
@@ -1724,14 +1726,14 @@ makeLabel(
     "ПОРЯДОК ЛОКАЦИЙ // ↑ ↓ меняют порядок // POS = текущие координаты",
     UDim2.fromOffset(4, 224),
     UDim2.new(1, -8, 0, 18),
-    8,
+    17,
     C.muted,
     Enum.Font.Code
 )
 
 local routeScroll = Instance.new("ScrollingFrame")
 routeScroll.Position = UDim2.fromOffset(0, 246)
-routeScroll.Size = UDim2.new(1, 0, 0, 260)
+routeScroll.Size = UDim2.new(1, 0, 0, 275)
 routeScroll.BackgroundColor3 = C.panel
 routeScroll.BorderSizePixel = 0
 routeScroll.ScrollBarThickness = 5
@@ -1791,7 +1793,7 @@ local function movePoint(index, direction)
     end
 
     if data.isChest then
-        setFarmStatus("Сундук закреплён последней точкой")
+        setFarmStatus("Сундук нельзя двигать; удалить можно через ×")
         return
     end
 
@@ -1804,7 +1806,7 @@ local function movePoint(index, direction)
     local targetData = routePoints[target]
 
     if targetData and targetData.isChest then
-        setFarmStatus("Сундук должен оставаться последним")
+        setFarmStatus("Сундук нельзя опускать/поднимать; удалить можно через ×")
         return
     end
 
@@ -1822,7 +1824,7 @@ end
 local function makeRouteRow(index, data)
     local row = Instance.new("Frame")
     row.Name = "RouteRow_" .. tostring(index)
-    row.Size = UDim2.new(1, 0, 0, 46)
+    row.Size = UDim2.new(1, 0, 0, 52)
     row.BackgroundColor3 =
         data.isChest and Color3.fromRGB(28, 28, 28) or C.panel2
     row.BorderSizePixel = 0
@@ -1839,8 +1841,8 @@ local function makeRouteRow(index, data)
         row,
         "#" .. tostring(index),
         UDim2.fromOffset(7, 0),
-        UDim2.fromOffset(28, 46),
-        8,
+        UDim2.fromOffset(28, 52),
+        17,
         C.muted,
         Enum.Font.Code
     )
@@ -1854,7 +1856,7 @@ local function makeRouteRow(index, data)
     nameBox.ClearTextOnFocus = false
     nameBox.Text = tostring(data.name or ("Локация " .. index))
     nameBox.TextColor3 = C.text
-    nameBox.TextSize = 8
+    nameBox.TextSize = 17
     nameBox.Font = Enum.Font.GothamMedium
     nameBox.Parent = row
     nameBox.TextEditable = not data.isChest
@@ -1870,7 +1872,7 @@ local function makeRouteRow(index, data)
     coordBox.PlaceholderText = "X, Y, Z"
     coordBox.TextColor3 = C.text
     coordBox.PlaceholderColor3 = C.muted
-    coordBox.TextSize = 8
+    coordBox.TextSize = 17
     coordBox.Font = Enum.Font.Code
     coordBox.TextXAlignment = Enum.TextXAlignment.Left
     coordBox.Parent = row
@@ -1885,7 +1887,7 @@ local function makeRouteRow(index, data)
     waitBox.Text = string.format("%.1f", tonumber(data.wait) or 2)
     waitBox.PlaceholderText = "сек"
     waitBox.TextColor3 = C.text
-    waitBox.TextSize = 8
+    waitBox.TextSize = 17
     waitBox.Font = Enum.Font.Code
     waitBox.Parent = row
     round(waitBox, 4)
@@ -1896,7 +1898,7 @@ local function makeRouteRow(index, data)
         UDim2.new(1, -168, 0, 8),
         UDim2.fromOffset(38, 30)
     )
-    posBtn.TextSize = 7
+    posBtn.TextSize = 16
 
     local upBtn = makeButton(
         row,
@@ -1904,7 +1906,7 @@ local function makeRouteRow(index, data)
         UDim2.new(1, -124, 0, 8),
         UDim2.fromOffset(28, 30)
     )
-    upBtn.TextSize = 14
+    upBtn.TextSize = 17
 
     local downBtn = makeButton(
         row,
@@ -1912,15 +1914,15 @@ local function makeRouteRow(index, data)
         UDim2.new(1, -92, 0, 8),
         UDim2.fromOffset(28, 30)
     )
-    downBtn.TextSize = 14
+    downBtn.TextSize = 17
 
     local deleteBtn = makeButton(
         row,
-        data.isChest and "●" or "×",
+        "×",
         UDim2.new(1, -60, 0, 8),
         UDim2.fromOffset(28, 30)
     )
-    deleteBtn.TextSize = data.isChest and 8 or 13
+    deleteBtn.TextSize = 16
 
     addConnection(nameBox.FocusLost:Connect(function()
         if data.isChest then
@@ -1994,21 +1996,19 @@ local function makeRouteRow(index, data)
     end))
 
     addConnection(deleteBtn.MouseButton1Click:Connect(function()
-        if data.isChest then
-            setFarmStatus("Сундук закреплён и не удаляется")
-            return
-        end
-
         if state.routeFarm then
             setFarmStatus("Останови автофарм перед удалением")
             return
         end
 
+        local removedName =
+            tostring(data.name or ("Точка " .. tostring(index)))
+
         table.remove(routePoints, index)
         rebuildRouteRows()
 
         setFarmStatus(
-            "Локация удалена"
+            "Удалено: " .. removedName
         )
     end))
 
@@ -2104,7 +2104,7 @@ end))
 -- ---------------------------------------------------------
 
 local footer = Instance.new("Frame")
-footer.Position = UDim2.fromOffset(0, 513)
+footer.Position = UDim2.fromOffset(0, 528)
 footer.Size = UDim2.new(1, 0, 0, 50)
 footer.BackgroundColor3 = C.panel
 footer.BorderSizePixel = 0
@@ -2118,22 +2118,22 @@ local resetBtn = makeButton(
     UDim2.fromOffset(8, 8),
     UDim2.fromOffset(135, 34)
 )
-resetBtn.TextSize = 8
+resetBtn.TextSize = 17
 
 local clearBtn = makeButton(
     footer,
-    "ОЧИСТИТЬ ЛОКАЦИИ",
+    "УДАЛИТЬ ВСЕ ТОЧКИ",
     UDim2.fromOffset(149, 8),
     UDim2.fromOffset(140, 34)
 )
-clearBtn.TextSize = 8
+clearBtn.TextSize = 17
 
 farmStatusLabel = makeLabel(
     footer,
     "Готово // редактируй маршрут",
     UDim2.fromOffset(300, 2),
     UDim2.new(1, -308, 1, -4),
-    8,
+    17,
     C.muted,
     Enum.Font.Code
 )
@@ -2161,24 +2161,11 @@ addConnection(clearBtn.MouseButton1Click:Connect(function()
         return
     end
 
-    local chest = nil
-
-    for _, data in ipairs(routePoints) do
-        if data.isChest then
-            chest = data
-            break
-        end
-    end
-
     table.clear(routePoints)
-
-    if chest then
-        routePoints[1] = chest
-    end
 
     rebuildRouteRows()
 
-    setFarmStatus("Локации очищены // сундук сохранён")
+    setFarmStatus("Все точки удалены")
 end))
 
 -- ---------------------------------------------------------
@@ -2767,5 +2754,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V15 RU] Loaded")
-print("[CYBER PANEL V15 RU] All functions OFF")
+print("[CYBER PANEL V17 RU] Loaded")
+print("[CYBER PANEL V17 RU] All functions OFF")
