@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V21 RU
+    CYBER PANEL V22 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -137,6 +137,7 @@ for _, name in ipairs({
     "CyberPanelV19",
     "CyberPanelV20",
     "CyberPanelV21",
+    "CyberPanelV22",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -221,7 +222,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV21"
+gui.Name = "CyberPanelV22"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -1357,8 +1358,23 @@ local DEFAULT_ROUTE_POINTS = {
         wait = 3.5
     },
     {
+        name = "Локация 13",
+        pos = Vector3.new(4499.82, 4.19, 1172.79),
+        wait = 3.0
+    },
+    {
+        name = "Локация 14",
+        pos = Vector3.new(4503.65, 4.19, 1317.40),
+        wait = 5.0
+    },
+    {
+        name = "Локация 15",
+        pos = Vector3.new(4502.56, 4.19, 1411.56),
+        wait = 0.5
+    },
+    {
         name = "СУНДУК",
-        pos = Vector3.new(4487.94, 4.75, 1288.67),
+        pos = Vector3.new(4489.35, 4.99, 1472.45),
         wait = 2.0,
         isChest = true
     },
@@ -2362,7 +2378,7 @@ end))
 --
 --   ДОМ/СТАРТ
 --      ↓
---   1 → 2 → 3 → ... → 12 → 13 СУНДУК
+--   1 → 2 → 3 → ... → 15 → СУНДУК
 --      ↓
 --   ждём таймер сундука
 --      ↓
@@ -2470,7 +2486,7 @@ local function processCurrentPoint()
 
     if data.isChest then
         setFarmStatus(
-            "13 СУНДУК // TP..."
+            "СУНДУК // TP..."
         )
 
         hardTeleport(data.pos)
@@ -2941,5 +2957,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V21 RU] Loaded")
-print("[CYBER PANEL V21 RU] All functions OFF")
+print("[CYBER PANEL V22 RU] Loaded")
+print("[CYBER PANEL V22 RU] All functions OFF")
