@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V22 RU
+    CYBER PANEL V23 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -138,6 +138,7 @@ for _, name in ipairs({
     "CyberPanelV20",
     "CyberPanelV21",
     "CyberPanelV22",
+    "CyberPanelV23",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -222,7 +223,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV22"
+gui.Name = "CyberPanelV23"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -1340,32 +1341,32 @@ local DEFAULT_ROUTE_POINTS = {
     {
         name = "Локация 9",
         pos = Vector3.new(4503.82, 4.19, 929.81),
-        wait = 2.5
+        wait = 3.5
     },
     {
         name = "Локация 10",
         pos = Vector3.new(4502.91, 4.19, 1034.80),
-        wait = 2.5
+        wait = 3.5
     },
     {
         name = "Локация 11",
         pos = Vector3.new(4503.25, 4.19, 1144.19),
-        wait = 2.5
+        wait = 5.5
     },
     {
         name = "Локация 12",
         pos = Vector3.new(4500.22, 4.19, 1219.71),
-        wait = 3.5
+        wait = 5.5
     },
     {
         name = "Локация 13",
         pos = Vector3.new(4499.82, 4.19, 1172.79),
-        wait = 3.0
+        wait = 14.0
     },
     {
         name = "Локация 14",
         pos = Vector3.new(4503.65, 4.19, 1317.40),
-        wait = 5.0
+        wait = 20.0
     },
     {
         name = "Локация 15",
@@ -1755,7 +1756,7 @@ end))
 
 makeLabel(
     farmPage,
-    "ПОРЯДОК ЛОКАЦИЙ // ↑ ↓ меняют порядок // POS = текущие координаты",
+    "ПОРЯДОК // ↑ ↓ порядок // POS = текущие // ВРЕМЯ = ТОЧНЫЕ СЕКУНДЫ",
     UDim2.fromOffset(4, 255),
     UDim2.new(1, -8, 0, 18),
     17,
@@ -1788,6 +1789,7 @@ routeListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 routeListLayout.Parent = routeScroll
 
 local routeRows = {}
+local routeEditors = {}
 
 local function updateCanvas()
     task.defer(function()
@@ -1973,30 +1975,83 @@ local function makeRouteRow(index, data)
         nameBox.Text = value
     end))
 
-    addConnection(coordBox.FocusLost:Connect(function()
+    local updatingCoordText = false
+
+    local function syncCoordFromText(normalize)
+        if updatingCoordText then
+            return
+        end
+
         local parsed = parseXYZ(coordBox.Text)
 
         if parsed then
             data.pos = parsed
         end
 
-        coordBox.Text = formatXYZ(data.pos)
-    end))
+        if normalize then
+            updatingCoordText = true
+            coordBox.Text = formatXYZ(data.pos)
+            updatingCoordText = false
+        end
+    end
 
-    addConnection(waitBox.FocusLost:Connect(function()
-        local value = tonumber(
-            tostring(waitBox.Text):gsub(",", ".")
-        )
+    addConnection(
+        coordBox:GetPropertyChangedSignal("Text"):Connect(function()
+            syncCoordFromText(false)
+        end)
+    )
 
-        if value then
-            data.wait = math.clamp(value, 0.05, 120)
+    addConnection(
+        coordBox.FocusLost:Connect(function()
+            syncCoordFromText(true)
+        end)
+    )
+
+    local updatingWaitText = false
+
+    local function syncWaitFromText(normalize)
+        if updatingWaitText then
+            return
         end
 
-        waitBox.Text = string.format(
-            "%.1f",
-            tonumber(data.wait) or 2
-        )
-    end))
+        local raw =
+            tostring(waitBox.Text or "")
+            :gsub(",", ".")
+            :gsub("%s+", "")
+
+        local value = tonumber(raw)
+
+        if value then
+            -- Реальные секунды. Разрешаем до 3600 сек.
+            data.wait = math.clamp(value, 0.05, 3600)
+        end
+
+        if normalize then
+            updatingWaitText = true
+
+            waitBox.Text = string.format(
+                "%.2f",
+                tonumber(data.wait) or 2
+            ):gsub("0+$", ""):gsub("%.$", "")
+
+            updatingWaitText = false
+        end
+    end
+
+    -- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ:
+    -- значение записывается в data.wait СРАЗУ при вводе,
+    -- а не только после потери фокуса.
+    addConnection(
+        waitBox:GetPropertyChangedSignal("Text"):Connect(function()
+            syncWaitFromText(false)
+        end)
+    )
+
+    addConnection(
+        waitBox.FocusLost:Connect(function()
+            syncWaitFromText(true)
+        end)
+    )
 
     addConnection(posBtn.MouseButton1Click:Connect(function()
         if state.routeFarm then
@@ -2045,6 +2100,13 @@ local function makeRouteRow(index, data)
     end))
 
     routeRows[index] = row
+    routeEditors[index] = {
+        data = data,
+        row = row,
+        nameBox = nameBox,
+        coordBox = coordBox,
+        waitBox = waitBox
+    }
 end
 
 rebuildRouteRows = function()
@@ -2055,6 +2117,7 @@ rebuildRouteRows = function()
     end
 
     table.clear(routeRows)
+    table.clear(routeEditors)
 
     for i, data in ipairs(routePoints) do
         if data.isChest then
@@ -2371,6 +2434,52 @@ addConnection(clearBtn.MouseButton1Click:Connect(function()
     setFarmStatus("Все точки удалены")
 end))
 
+-- =========================================================
+-- FORCE-SYNC ROUTE EDITOR
+-- =========================================================
+
+local function syncAllRouteEditors()
+    for index, editor in pairs(routeEditors) do
+        local data = editor.data
+
+        if data then
+            if editor.coordBox and editor.coordBox.Parent then
+                local parsed = parseXYZ(editor.coordBox.Text)
+                if parsed then
+                    data.pos = parsed
+                end
+            end
+
+            if editor.waitBox and editor.waitBox.Parent then
+                local raw =
+                    tostring(editor.waitBox.Text or "")
+                    :gsub(",", ".")
+                    :gsub("%s+", "")
+
+                local seconds = tonumber(raw)
+
+                if seconds then
+                    data.wait = math.clamp(seconds, 0.05, 3600)
+                end
+            end
+
+            if editor.nameBox
+                and editor.nameBox.Parent
+                and not data.isChest
+            then
+                local name =
+                    tostring(editor.nameBox.Text or "")
+                    :gsub("^%s+", "")
+                    :gsub("%s+$", "")
+
+                if name ~= "" then
+                    data.name = name
+                end
+            end
+        end
+    end
+end
+
 -- ---------------------------------------------------------
 -- ROUTE FARM ENGINE V15
 --
@@ -2421,12 +2530,17 @@ local function holdPosition(pos, seconds, titleText)
             tonumber(seconds) or 0.05
         )
 
-    local finishAt = os.clock() + duration
+    -- os.clock() is monotonic for this purpose.
+    -- We measure elapsed time, so e.g. 20.0 means a full 20 seconds.
+    local startedAt = os.clock()
 
-    while alive
-        and state.routeFarm
-        and os.clock() < finishAt
-    do
+    while alive and state.routeFarm do
+        local elapsed = os.clock() - startedAt
+
+        if elapsed >= duration then
+            break
+        end
+
         local root = getRoot()
 
         if root then
@@ -2437,15 +2551,21 @@ local function holdPosition(pos, seconds, titleText)
             end)
         end
 
+        local remaining = math.max(0, duration - elapsed)
+
         setFarmStatus(
             string.format(
-                "%s // %.1f сек",
+                "%s // %.1f / %.1f сек // осталось %.1f",
                 titleText,
-                math.max(0, finishAt - os.clock())
+                elapsed,
+                duration,
+                remaining
             )
         )
 
-        task.wait(0.06)
+        -- Small stable step. This does not shorten the target duration,
+        -- because exit is based on elapsed real time.
+        task.wait(0.05)
     end
 end
 
@@ -2467,6 +2587,11 @@ local function goHome()
 end
 
 local function processCurrentPoint()
+    -- Даже если пользователь только что вписал "20" и курсор
+    -- всё ещё находится в поле, здесь значение принудительно
+    -- считывается прямо перед началом текущей точки.
+    syncAllRouteEditors()
+
     if #routePoints == 0 then
         setFarmStatus("Нет точек")
         state.routeFarm = false
@@ -2957,5 +3082,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V22 RU] Loaded")
-print("[CYBER PANEL V22 RU] All functions OFF")
+print("[CYBER PANEL V23 RU] Loaded")
+print("[CYBER PANEL V23 RU] All functions OFF")
