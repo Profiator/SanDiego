@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V20 RU
+    CYBER PANEL V21 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -136,6 +136,7 @@ for _, name in ipairs({
     "CyberPanelV18",
     "CyberPanelV19",
     "CyberPanelV20",
+    "CyberPanelV21",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -220,7 +221,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV20"
+gui.Name = "CyberPanelV21"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -1748,7 +1749,7 @@ makeLabel(
 
 local routeScroll = Instance.new("ScrollingFrame")
 routeScroll.Position = UDim2.fromOffset(0, 277)
-routeScroll.Size = UDim2.new(1, 0, 0, 244)
+routeScroll.Size = UDim2.new(1, 0, 0, 236)
 routeScroll.BackgroundColor3 = C.panel
 routeScroll.BorderSizePixel = 0
 routeScroll.ScrollBarThickness = 5
@@ -2068,37 +2069,28 @@ local addPointBusy = false
 local lastAddRequestAt = 0
 
 local function scrollToRouteIndex(index)
-    task.defer(function()
-        task.wait()
+    task.spawn(function()
+        task.wait(0.05)
 
-        updateCanvas()
+        pcall(updateCanvas)
 
         local row = routeRows[index]
         if not row or not row.Parent then
             return
         end
 
-        task.wait()
-
         local rowTop =
             row.AbsolutePosition.Y -
             routeScroll.AbsolutePosition.Y +
             routeScroll.CanvasPosition.Y
 
-        local targetY = math.max(
-            0,
-            rowTop - 10
-        )
-
-        local maxY = math.max(
-            0,
-            routeScroll.AbsoluteCanvasSize.Y -
-            routeScroll.AbsoluteWindowSize.Y
-        )
+        local visibleHeight = routeScroll.AbsoluteSize.Y
+        local canvasHeight = routeListLayout.AbsoluteContentSize.Y + 12
+        local maxY = math.max(0, canvasHeight - visibleHeight)
 
         routeScroll.CanvasPosition = Vector2.new(
             0,
-            math.clamp(targetY, 0, maxY)
+            math.clamp(rowTop - 8, 0, maxY)
         )
     end)
 end
@@ -2106,123 +2098,117 @@ end
 local function addNewRoutePoint()
     local now = os.clock()
 
-    -- Один физический клик может вызвать MouseButton1Down,
-    -- MouseButton1Click и Activated. Не даём добавить три раза.
-    if addPointBusy or (now - lastAddRequestAt) < 0.35 then
+    if addPointBusy or (now - lastAddRequestAt) < 0.45 then
         return
     end
 
     lastAddRequestAt = now
     addPointBusy = true
 
-    if state.routeFarm then
-        setFarmStatus("Останови автофарм перед добавлением")
-        addPointBtn.Text = "СТОП ФАРМ"
-        task.delay(0.8, function()
-            if addPointBtn and addPointBtn.Parent then
-                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
-            end
-        end)
-        addPointBusy = false
-        return
-    end
+    local ok, err = xpcall(function()
+        if state.routeFarm then
+            error("Сначала выключи автофарм")
+        end
 
-    local pos = parseXYZ(addCoordBox.Text)
+        local pos = parseXYZ(addCoordBox.Text)
 
-    if not pos then
-        setFarmStatus("ОШИБКА // координаты: X, Y, Z")
-        addPointBtn.Text = "ОШИБКА"
+        if not pos then
+            error("Координаты должны быть в формате X, Y, Z")
+        end
 
-        task.delay(0.8, function()
-            if addPointBtn and addPointBtn.Parent then
-                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
-            end
-        end)
+        local seconds = tonumber(
+            tostring(addWaitBox.Text):gsub(",", ".")
+        )
 
-        addPointBusy = false
-        return
-    end
+        if not seconds then
+            seconds = 2
+        end
 
-    local seconds = tonumber(
-        tostring(addWaitBox.Text):gsub(",", ".")
-    ) or 2
+        seconds = math.clamp(seconds, 0.05, 120)
 
-    seconds = math.clamp(seconds, 0.05, 120)
+        local name = tostring(addNameBox.Text or "")
+        name = name:gsub("^%s+", ""):gsub("%s+$", "")
 
-    local name = tostring(addNameBox.Text or "")
-    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+        if name == "" then
+            name = "Локация " .. tostring(#routePoints + 1)
+        end
 
-    if name == "" then
-        name = "Локация " .. tostring(#routePoints + 1)
-    end
+        -- Если есть сундук — новая локация идёт прямо перед ним.
+        -- Если сундука нет — в самый конец.
+        local chestIndex = findChestIndex()
+        local insertIndex = chestIndex or (#routePoints + 1)
 
-    local chestIndex = findChestIndex()
-
-    -- Если сундук есть — новая точка всегда вставляется прямо перед ним.
-    -- Если сундука нет — добавляется в самый конец.
-    local insertIndex =
-        chestIndex or (#routePoints + 1)
-
-    table.insert(
-        routePoints,
-        insertIndex,
-        {
+        local newPoint = {
             name = name,
-            pos = pos,
+            pos = Vector3.new(pos.X, pos.Y, pos.Z),
             wait = seconds,
             isChest = false
         }
-    )
 
-    rebuildRouteRows()
+        table.insert(routePoints, insertIndex, newPoint)
 
-    -- Сразу прокручиваем список к новой строке,
-    -- чтобы было визуально видно, что она реально добавилась.
-    scrollToRouteIndex(insertIndex)
-
-    setFarmStatus(
-        string.format(
-            "ДОБАВЛЕНО ✓  #%d  %s",
-            insertIndex,
-            name
-        )
-    )
-
-    addPointBtn.Text = "ДОБАВЛЕНО ✓ // ТОЧКА #" .. tostring(insertIndex)
-
-    -- Оставляем время, а имя/координаты очищаем для следующей точки.
-    addNameBox.Text = ""
-    addCoordBox.Text = ""
-
-    task.delay(0.9, function()
-        if addPointBtn and addPointBtn.Parent then
-            addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
+        -- Сразу убеждаемся, что таблица реально выросла.
+        if routePoints[insertIndex] ~= newPoint then
+            error("Не удалось вставить точку в маршрут")
         end
+
+        rebuildRouteRows()
+        scrollToRouteIndex(insertIndex)
+
+        setFarmStatus(
+            string.format(
+                "ДОБАВЛЕНО ✓  #%d  %s  // всего %d",
+                insertIndex,
+                name,
+                #routePoints
+            )
+        )
+
+        addPointBtn.Text =
+            "ДОБАВЛЕНО ✓ // #" .. tostring(insertIndex)
+
+        -- Не очищаем поля мгновенно: пользователь видит,
+        -- что именно было добавлено. Очистим через 0.8 сек.
+        task.delay(0.8, function()
+            if addPointBtn and addPointBtn.Parent then
+                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
+            end
+
+            if addNameBox and addNameBox.Parent then
+                addNameBox.Text = ""
+            end
+
+            if addCoordBox and addCoordBox.Parent then
+                addCoordBox.Text = ""
+            end
+        end)
+    end, function(message)
+        return tostring(message)
     end)
 
+    -- ВАЖНО: busy сбрасывается всегда, даже если внутри была ошибка.
     addPointBusy = false
+
+    if not ok then
+        local message = tostring(err or "неизвестная ошибка")
+        message = message:gsub("\n.*", "")
+
+        setFarmStatus("ОШИБКА ДОБАВЛЕНИЯ // " .. message)
+        addPointBtn.Text = "ОШИБКА"
+
+        task.delay(1.0, function()
+            if addPointBtn and addPointBtn.Parent then
+                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
+            end
+        end)
+    end
 end
 
--- Xeno/Roblox UI: в разных сборках один из сигналов может
--- не доходить до CoreGui. Подключаем несколько, но debounce
--- выше гарантирует только одно добавление за клик.
-
-addConnection(
-    addPointBtn.MouseButton1Down:Connect(function()
-        setFarmStatus("КЛИК ✓ // добавляем точку...")
-        task.defer(addNewRoutePoint)
-    end)
-)
-
-addConnection(
-    addPointBtn.MouseButton1Click:Connect(function()
-        addNewRoutePoint()
-    end)
-)
-
+-- Единственный штатный GUI-сигнал.
+-- Глобальный hit-test ниже остаётся резервом.
 addConnection(
     addPointBtn.Activated:Connect(function()
-        addNewRoutePoint()
+        task.spawn(addNewRoutePoint)
     end)
 )
 
@@ -2230,7 +2216,7 @@ addConnection(
 addConnection(
     addCoordBox.FocusLost:Connect(function(enterPressed)
         if enterPressed then
-            addNewRoutePoint()
+            task.spawn(addNewRoutePoint)
         end
     end)
 )
@@ -2238,12 +2224,8 @@ addConnection(
 -- =========================================================
 -- HARD INPUT FALLBACK
 --
--- Иногда Xeno/CoreGui визуально показывает кнопку, но Roblox
--- не отдаёт ей Activated/MouseButton1Click. Поэтому дополнительно
--- ловим ГЛОБАЛЬНЫЙ клик мыши/тап и сами проверяем, попал ли он
--- в абсолютный прямоугольник кнопки.
---
--- Это не зависит от того, какой GuiObject оказался сверху.
+-- Если CoreGui не отдаёт Activated, ловим глобальный клик
+-- и проверяем абсолютные координаты кнопки.
 -- =========================================================
 
 local function pointInsideGui(guiObject, point)
@@ -2269,17 +2251,24 @@ addConnection(
             return
         end
 
-        local isPrimary =
+        local isMouse =
             input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch
 
-        if not isPrimary then
+        local isTouch =
+            input.UserInputType == Enum.UserInputType.Touch
+
+        if not isMouse and not isTouch then
+            -- F6 — резервное добавление.
+            if not gameProcessed and input.KeyCode == Enum.KeyCode.F6 then
+                task.spawn(addNewRoutePoint)
+            end
+
             return
         end
 
         local point
 
-        if input.UserInputType == Enum.UserInputType.Touch then
+        if isTouch then
             point = Vector2.new(
                 input.Position.X,
                 input.Position.Y
@@ -2289,27 +2278,9 @@ addConnection(
         end
 
         if pointInsideGui(addPointBtn, point) then
-            setFarmStatus("HARD CLICK ✓ // добавляем...")
-
-            -- task.defer нужен, чтобы TextBox успел отпустить фокус.
-            task.defer(function()
-                addNewRoutePoint()
-            end)
-        end
-    end)
-)
-
--- Клавиатурный резерв: F6 добавляет заполненную точку,
--- когда открыта вкладка АВТОФАРМ.
-addConnection(
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed or not farmPage.Visible then
-            return
-        end
-
-        if input.KeyCode == Enum.KeyCode.F6 then
-            setFarmStatus("F6 ✓ // добавляем...")
-            addNewRoutePoint()
+            -- Activated и этот fallback могут сработать вместе,
+            -- debounce в addNewRoutePoint оставит только один вызов.
+            task.spawn(addNewRoutePoint)
         end
     end)
 )
@@ -2320,7 +2291,7 @@ addConnection(
 
 local footer = Instance.new("Frame")
 footer.Position = UDim2.fromOffset(0, 528)
-footer.Size = UDim2.new(1, 0, 0, 50)
+footer.Size = UDim2.new(1, 0, 0, 82)
 footer.BackgroundColor3 = C.panel
 footer.BorderSizePixel = 0
 footer.Parent = farmPage
@@ -2331,28 +2302,29 @@ local resetBtn = makeButton(
     footer,
     "СБРОСИТЬ МАРШРУТ",
     UDim2.fromOffset(8, 8),
-    UDim2.fromOffset(135, 34)
+    UDim2.new(0.5, -12, 0, 34)
 )
-resetBtn.TextSize = 17
+resetBtn.TextSize = 10
 
 local clearBtn = makeButton(
     footer,
     "УДАЛИТЬ ВСЕ ТОЧКИ",
-    UDim2.fromOffset(149, 8),
-    UDim2.fromOffset(140, 34)
+    UDim2.new(0.5, 4, 0, 8),
+    UDim2.new(0.5, -12, 0, 34)
 )
-clearBtn.TextSize = 17
+clearBtn.TextSize = 10
 
 farmStatusLabel = makeLabel(
     footer,
     "Готово // редактируй маршрут",
-    UDim2.fromOffset(300, 2),
-    UDim2.new(1, -308, 1, -4),
-    17,
+    UDim2.fromOffset(10, 46),
+    UDim2.new(1, -20, 0, 28),
+    10,
     C.muted,
     Enum.Font.Code
 )
 farmStatusLabel.TextWrapped = true
+farmStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Center
 
 addConnection(resetBtn.MouseButton1Click:Connect(function()
@@ -2969,5 +2941,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V20 RU] Loaded")
-print("[CYBER PANEL V20 RU] All functions OFF")
+print("[CYBER PANEL V21 RU] Loaded")
+print("[CYBER PANEL V21 RU] All functions OFF")
