@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V14 RU
+    CYBER PANEL V15 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -130,6 +130,7 @@ for _, name in ipairs({
     "CyberPanelV12",
     "CyberPanelV13",
     "CyberPanelV14",
+    "CyberPanelV15",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -142,19 +143,22 @@ end
 -- =========================================================
 
 local C = {
-    bg = Color3.fromRGB(7, 12, 17),
-    panel = Color3.fromRGB(11, 18, 24),
-    panel2 = Color3.fromRGB(15, 24, 31),
+    -- BLACK / WHITE UI
+    bg = Color3.fromRGB(0, 0, 0),
+    panel = Color3.fromRGB(9, 9, 9),
+    panel2 = Color3.fromRGB(18, 18, 18),
 
-    cyan = Color3.fromRGB(44, 214, 255),
-    cyanDim = Color3.fromRGB(27, 84, 101),
+    -- Старые имена оставлены, чтобы не переписывать весь движок UI.
+    -- Теперь это бело-серая палитра.
+    cyan = Color3.fromRGB(245, 245, 245),
+    cyanDim = Color3.fromRGB(72, 72, 72),
 
-    text = Color3.fromRGB(230, 248, 255),
-    muted = Color3.fromRGB(125, 157, 169),
+    text = Color3.fromRGB(248, 248, 248),
+    muted = Color3.fromRGB(150, 150, 150),
 
-    green = Color3.fromRGB(52, 222, 139),
-    off = Color3.fromRGB(48, 59, 67),
-    red = Color3.fromRGB(224, 73, 86),
+    green = Color3.fromRGB(245, 245, 245),
+    off = Color3.fromRGB(42, 42, 42),
+    red = Color3.fromRGB(75, 75, 75),
 }
 
 local function round(obj, radius)
@@ -196,7 +200,7 @@ local function makeButton(parent, text, pos, size)
     b.AutoButtonColor = false
     b.Text = text
     b.TextColor3 = C.text
-    b.TextSize = 9
+    b.TextSize = 10
     b.Font = Enum.Font.GothamBold
     b.Parent = parent
 
@@ -211,22 +215,22 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV14"
+gui.Name = "CyberPanelV15"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.fromOffset(330, 500)
-main.Position = UDim2.new(0, 18, 0.5, -250)
+main.Size = UDim2.fromOffset(620, 720)
+main.Position = UDim2.new(0, 22, 0.5, -360)
 main.BackgroundColor3 = C.bg
-main.BackgroundTransparency = 0.10
+main.BackgroundTransparency = 0.03
 main.BorderSizePixel = 0
 main.Active = true
 main.Parent = gui
-round(main, 10)
-addStroke(main, C.cyan, 0.28)
+round(main, 8)
+addStroke(main, C.cyan, 0.12)
 
 local topLine = Instance.new("Frame")
 topLine.Size = UDim2.new(1, -20, 0, 2)
@@ -241,10 +245,10 @@ topLine.Parent = main
 
 makeLabel(
     main,
-    "CYBER // PANEL",
+    "BLACK // PANEL",
     UDim2.fromOffset(12, 7),
     UDim2.fromOffset(190, 19),
-    11,
+    13,
     C.text,
     Enum.Font.GothamBold
 )
@@ -256,8 +260,9 @@ local closeBtn = makeButton(
     UDim2.fromOffset(24, 24)
 )
 closeBtn.TextSize = 15
-closeBtn.BackgroundColor3 = C.red
-closeBtn.BackgroundTransparency = 0.15
+closeBtn.BackgroundColor3 = C.panel2
+closeBtn.BackgroundTransparency = 0
+addStroke(closeBtn, C.text, 0.35)
 
 local playerLabel = makeLabel(
     main,
@@ -301,8 +306,8 @@ local copyBtn = makeButton(
 -- =========================================================
 
 local tabs = Instance.new("Frame")
-tabs.Position = UDim2.fromOffset(10, 92)
-tabs.Size = UDim2.new(1, -20, 0, 28)
+tabs.Position = UDim2.fromOffset(10, 96)
+tabs.Size = UDim2.new(1, -20, 0, 34)
 tabs.BackgroundTransparency = 1
 tabs.Parent = main
 
@@ -312,7 +317,7 @@ local charTab = makeButton(
     UDim2.fromOffset(0, 0),
     UDim2.new(0.3333, -4, 1, 0)
 )
-charTab.TextSize = 8
+charTab.TextSize = 10
 
 local autoTab = makeButton(
     tabs,
@@ -320,7 +325,7 @@ local autoTab = makeButton(
     UDim2.new(0.3333, 2, 0, 0),
     UDim2.new(0.3333, -4, 1, 0)
 )
-autoTab.TextSize = 8
+autoTab.TextSize = 10
 
 local farmTab = makeButton(
     tabs,
@@ -328,11 +333,11 @@ local farmTab = makeButton(
     UDim2.new(0.6666, 4, 0, 0),
     UDim2.new(0.3334, -4, 1, 0)
 )
-farmTab.TextSize = 8
+farmTab.TextSize = 10
 
 local charPage = Instance.new("Frame")
-charPage.Position = UDim2.fromOffset(10, 126)
-charPage.Size = UDim2.new(1, -20, 1, -136)
+charPage.Position = UDim2.fromOffset(10, 138)
+charPage.Size = UDim2.new(1, -20, 1, -150)
 charPage.BackgroundTransparency = 1
 charPage.Parent = main
 
@@ -1273,180 +1278,106 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- AUTOFARM ROUTE EDITOR
+-- AUTOFARM // LARGE ROUTE MANAGER
 -- =========================================================
 
-local routeStart = Vector3.new(
+local DEFAULT_ROUTE_START = Vector3.new(
     4501.50,
     4.64,
     94.00
 )
 
--- Точка с isChest=true — получение сундука.
--- После короткой задержки на получение сундука
--- скрипт сам телепортирует персонажа на routeStart
--- и начинает новый круг с точки 1.
-local routePoints = {
+local routeStart = DEFAULT_ROUTE_START
+
+local DEFAULT_ROUTE_POINTS = {
     {
-        name = "1",
+        name = "Локация 1",
         pos = Vector3.new(4502.38, 4.65, 165.43),
         wait = 2.0
     },
     {
-        name = "2",
+        name = "Локация 2",
         pos = Vector3.new(4501.55, 4.65, 258.91),
         wait = 2.0
     },
     {
-        name = "3",
+        name = "Локация 3",
         pos = Vector3.new(4500.93, 4.65, 340.21),
         wait = 2.5
     },
     {
-        name = "4",
+        name = "Локация 4",
         pos = Vector3.new(4501.12, 4.19, 449.74),
         wait = 2.0
     },
     {
-        name = "5",
+        name = "Локация 5",
         pos = Vector3.new(4501.92, 4.19, 545.81),
         wait = 2.0
     },
     {
-        name = "6",
+        name = "Локация 6",
         pos = Vector3.new(4501.32, 4.19, 636.50),
         wait = 2.5
     },
     {
-        name = "7",
+        name = "Локация 7",
         pos = Vector3.new(4500.84, 4.19, 740.20),
         wait = 2.0
     },
     {
-        name = "8",
+        name = "Локация 8",
         pos = Vector3.new(4500.70, 4.19, 832.43),
         wait = 2.0
     },
     {
-        name = "9",
+        name = "Локация 9",
         pos = Vector3.new(4503.82, 4.19, 929.81),
         wait = 2.5
     },
     {
-        name = "10",
+        name = "Локация 10",
         pos = Vector3.new(4502.91, 4.19, 1034.80),
         wait = 2.5
     },
     {
-        name = "11",
+        name = "Локация 11",
         pos = Vector3.new(4503.25, 4.19, 1144.19),
         wait = 2.5
     },
     {
-        name = "12",
+        name = "Локация 12",
         pos = Vector3.new(4500.22, 4.19, 1219.71),
         wait = 3.5
     },
     {
-        name = "13 СУНДУК",
+        name = "СУНДУК",
         pos = Vector3.new(4487.94, 4.75, 1288.67),
         wait = 2.0,
         isChest = true
     },
 }
 
-local farmInfo = Instance.new("Frame")
-farmInfo.Position = UDim2.fromOffset(0, 0)
-farmInfo.Size = UDim2.new(1, 0, 0, 50)
-farmInfo.BackgroundColor3 = C.panel
-farmInfo.BackgroundTransparency = 0.08
-farmInfo.BorderSizePixel = 0
-farmInfo.Parent = farmPage
-round(farmInfo, 7)
-addStroke(farmInfo, C.cyanDim, 0.65)
+local function cloneRoute(source)
+    local result = {}
 
-makeLabel(
-    farmInfo,
-    "МАРШРУТНЫЙ АВТОФАРМ",
-    UDim2.fromOffset(9, 2),
-    UDim2.new(1, -18, 0, 18),
-    9,
-    C.cyan,
-    Enum.Font.GothamBold
-)
-
-makeLabel(
-    farmInfo,
-    "ДОМ → 1→2→...→13 СУНДУК → ДОМ → ПОВТОР",
-    UDim2.fromOffset(9, 22),
-    UDim2.new(1, -18, 0, 18),
-    7,
-    C.muted,
-    Enum.Font.Code
-)
-
-local farmToggleRow = makeRow(
-    farmPage,
-    57,
-    "АВТОФАРМ МАРШРУТ"
-)
-
-local loopRow = makeRow(
-    farmPage,
-    96,
-    "БЕСКОНЕЧНЫЙ КРУГ"
-)
-
-local farmToggleControl = nil
-local loopToggleControl = nil
-
-farmToggleControl = makeToggle(farmToggleRow, false, function(v)
-    state.routeFarm = v
-
-    if v then
-        setFarmStatus("ЗАПУСК // телепорт на старт...")
-    else
-        setFarmStatus("ОСТАНОВЛЕНО")
+    for i, item in ipairs(source) do
+        result[i] = {
+            name = tostring(item.name or ("Локация " .. i)),
+            pos = Vector3.new(
+                item.pos.X,
+                item.pos.Y,
+                item.pos.Z
+            ),
+            wait = tonumber(item.wait) or 2,
+            isChest = item.isChest == true
+        }
     end
-end)
 
-loopToggleControl = makeToggle(loopRow, true, function(v)
-    state.routeLoop = v
+    return result
+end
 
-    if state.routeFarm then
-        setFarmStatus(
-            v
-            and "Цикл ВКЛ // после сундука TP на старт"
-            or "Цикл ВЫКЛ // один проход"
-        )
-    end
-end)
-
-local startBox = Instance.new("TextBox")
-startBox.Position = UDim2.fromOffset(0, 136)
-startBox.Size = UDim2.new(1, -70, 0, 28)
-startBox.BackgroundColor3 = C.panel2
-startBox.BackgroundTransparency = 0.02
-startBox.BorderSizePixel = 0
-startBox.ClearTextOnFocus = false
-startBox.Text = "4501.50, 4.64, 94.00"
-startBox.PlaceholderText = "Старт X, Y, Z"
-startBox.TextColor3 = C.text
-startBox.PlaceholderColor3 = C.muted
-startBox.TextSize = 8
-startBox.Font = Enum.Font.Code
-startBox.TextXAlignment = Enum.TextXAlignment.Left
-startBox.Parent = farmPage
-round(startBox, 6)
-addStroke(startBox, C.cyanDim, 0.62)
-
-local startTpBtn = makeButton(
-    farmPage,
-    "ТП СТАРТ",
-    UDim2.new(1, -65, 0, 136),
-    UDim2.fromOffset(65, 28)
-)
-startTpBtn.TextSize = 7
+local routePoints = cloneRoute(DEFAULT_ROUTE_POINTS)
 
 local function parseXYZ(raw)
     local nums = {}
@@ -1459,7 +1390,8 @@ local function parseXYZ(raw)
 
         if n then
             nums[#nums + 1] = n
-            if #nums == 3 then
+
+            if #nums >= 3 then
                 break
             end
         end
@@ -1473,6 +1405,15 @@ local function parseXYZ(raw)
         nums[1],
         nums[2],
         nums[3]
+    )
+end
+
+local function formatXYZ(pos)
+    return string.format(
+        "%.2f, %.2f, %.2f",
+        pos.X,
+        pos.Y,
+        pos.Z
     )
 end
 
@@ -1492,66 +1433,323 @@ local function safeTeleport(pos)
     return ok
 end
 
+-- ---------------------------------------------------------
+-- HEADER
+-- ---------------------------------------------------------
+
+local farmInfo = Instance.new("Frame")
+farmInfo.Position = UDim2.fromOffset(0, 0)
+farmInfo.Size = UDim2.new(1, 0, 0, 50)
+farmInfo.BackgroundColor3 = C.panel
+farmInfo.BackgroundTransparency = 0
+farmInfo.BorderSizePixel = 0
+farmInfo.Parent = farmPage
+round(farmInfo, 5)
+addStroke(farmInfo, C.text, 0.68)
+
+makeLabel(
+    farmInfo,
+    "АВТОФАРМ // РЕДАКТОР МАРШРУТА",
+    UDim2.fromOffset(12, 3),
+    UDim2.new(1, -24, 0, 22),
+    11,
+    C.text,
+    Enum.Font.GothamBold
+)
+
+makeLabel(
+    farmInfo,
+    "ДОМ → ЛОКАЦИИ ПО ПОРЯДКУ → СУНДУК → ДОМ → ПОВТОР",
+    UDim2.fromOffset(12, 25),
+    UDim2.new(1, -24, 0, 18),
+    8,
+    C.muted,
+    Enum.Font.Code
+)
+
+-- ---------------------------------------------------------
+-- FARM / LOOP TOGGLES
+-- ---------------------------------------------------------
+
+local farmToggleCard = Instance.new("Frame")
+farmToggleCard.Position = UDim2.fromOffset(0, 57)
+farmToggleCard.Size = UDim2.new(0.5, -4, 0, 40)
+farmToggleCard.BackgroundColor3 = C.panel
+farmToggleCard.BorderSizePixel = 0
+farmToggleCard.Parent = farmPage
+round(farmToggleCard, 5)
+addStroke(farmToggleCard, C.cyanDim, 0.38)
+
+makeLabel(
+    farmToggleCard,
+    "АВТОФАРМ",
+    UDim2.fromOffset(10, 0),
+    UDim2.new(1, -72, 1, 0),
+    9,
+    C.text,
+    Enum.Font.GothamBold
+)
+
+makeToggle(farmToggleCard, false, function(v)
+    state.routeFarm = v
+
+    if v then
+        setFarmStatus("ЗАПУСК // маршрут активен")
+    else
+        setFarmStatus("ОСТАНОВЛЕНО")
+    end
+end)
+
+local loopToggleCard = Instance.new("Frame")
+loopToggleCard.Position = UDim2.new(0.5, 4, 0, 57)
+loopToggleCard.Size = UDim2.new(0.5, -4, 0, 40)
+loopToggleCard.BackgroundColor3 = C.panel
+loopToggleCard.BorderSizePixel = 0
+loopToggleCard.Parent = farmPage
+round(loopToggleCard, 5)
+addStroke(loopToggleCard, C.cyanDim, 0.38)
+
+makeLabel(
+    loopToggleCard,
+    "БЕСКОНЕЧНЫЙ КРУГ",
+    UDim2.fromOffset(10, 0),
+    UDim2.new(1, -72, 1, 0),
+    9,
+    C.text,
+    Enum.Font.GothamBold
+)
+
+makeToggle(loopToggleCard, true, function(v)
+    state.routeLoop = v
+
+    setFarmStatus(
+        v
+        and "Цикл включён"
+        or "Цикл выключен // один проход"
+    )
+end)
+
+-- ---------------------------------------------------------
+-- HOME / START EDITOR
+-- ---------------------------------------------------------
+
+local homeCard = Instance.new("Frame")
+homeCard.Position = UDim2.fromOffset(0, 104)
+homeCard.Size = UDim2.new(1, 0, 0, 44)
+homeCard.BackgroundColor3 = C.panel
+homeCard.BorderSizePixel = 0
+homeCard.Parent = farmPage
+round(homeCard, 5)
+addStroke(homeCard, C.cyanDim, 0.38)
+
+makeLabel(
+    homeCard,
+    "ДОМ",
+    UDim2.fromOffset(10, 0),
+    UDim2.fromOffset(44, 44),
+    9,
+    C.text,
+    Enum.Font.GothamBold
+)
+
+local startBox = Instance.new("TextBox")
+startBox.Position = UDim2.fromOffset(54, 7)
+startBox.Size = UDim2.new(1, -255, 0, 30)
+startBox.BackgroundColor3 = C.panel2
+startBox.BorderSizePixel = 0
+startBox.ClearTextOnFocus = false
+startBox.Text = formatXYZ(routeStart)
+startBox.PlaceholderText = "X, Y, Z"
+startBox.TextColor3 = C.text
+startBox.PlaceholderColor3 = C.muted
+startBox.TextSize = 9
+startBox.Font = Enum.Font.Code
+startBox.TextXAlignment = Enum.TextXAlignment.Left
+startBox.Parent = homeCard
+round(startBox, 4)
+addStroke(startBox, C.cyanDim, 0.55)
+
+local homeCurrentBtn = makeButton(
+    homeCard,
+    "ТЕКУЩИЕ",
+    UDim2.new(1, -194, 0, 7),
+    UDim2.fromOffset(88, 30)
+)
+homeCurrentBtn.TextSize = 8
+
+local homeTpBtn = makeButton(
+    homeCard,
+    "TP ДОМОЙ",
+    UDim2.new(1, -100, 0, 7),
+    UDim2.fromOffset(90, 30)
+)
+homeTpBtn.TextSize = 8
+
 local function syncStartFromBox()
     local parsed = parseXYZ(startBox.Text)
 
     if parsed then
         routeStart = parsed
-        startBox.Text = string.format(
-            "%.2f, %.2f, %.2f",
-            parsed.X,
-            parsed.Y,
-            parsed.Z
-        )
+        startBox.Text = formatXYZ(routeStart)
         return true
     end
 
+    startBox.Text = formatXYZ(routeStart)
     return false
 end
 
 addConnection(startBox.FocusLost:Connect(function()
-    if not syncStartFromBox() then
-        startBox.Text = string.format(
-            "%.2f, %.2f, %.2f",
-            routeStart.X,
-            routeStart.Y,
-            routeStart.Z
-        )
+    syncStartFromBox()
+end))
+
+addConnection(homeCurrentBtn.MouseButton1Click:Connect(function()
+    local root = getRoot()
+
+    if not root then
+        setFarmStatus("Персонаж не найден")
+        return
+    end
+
+    routeStart = root.Position
+    startBox.Text = formatXYZ(routeStart)
+
+    setFarmStatus("Дом = текущая позиция")
+end))
+
+addConnection(homeTpBtn.MouseButton1Click:Connect(function()
+    syncStartFromBox()
+    safeTeleport(routeStart)
+    setFarmStatus("Телепорт домой")
+end))
+
+-- ---------------------------------------------------------
+-- ADD NEW LOCATION
+-- ---------------------------------------------------------
+
+local addCard = Instance.new("Frame")
+addCard.Position = UDim2.fromOffset(0, 155)
+addCard.Size = UDim2.new(1, 0, 0, 63)
+addCard.BackgroundColor3 = C.panel
+addCard.BorderSizePixel = 0
+addCard.Parent = farmPage
+round(addCard, 5)
+addStroke(addCard, C.cyanDim, 0.38)
+
+makeLabel(
+    addCard,
+    "ДОБАВИТЬ ЛОКАЦИЮ",
+    UDim2.fromOffset(10, 2),
+    UDim2.new(1, -20, 0, 18),
+    8,
+    C.muted,
+    Enum.Font.GothamBold
+)
+
+local addNameBox = Instance.new("TextBox")
+addNameBox.Position = UDim2.fromOffset(8, 26)
+addNameBox.Size = UDim2.fromOffset(105, 29)
+addNameBox.BackgroundColor3 = C.panel2
+addNameBox.BorderSizePixel = 0
+addNameBox.ClearTextOnFocus = false
+addNameBox.Text = ""
+addNameBox.PlaceholderText = "Название"
+addNameBox.TextColor3 = C.text
+addNameBox.PlaceholderColor3 = C.muted
+addNameBox.TextSize = 8
+addNameBox.Font = Enum.Font.GothamMedium
+addNameBox.Parent = addCard
+round(addNameBox, 4)
+
+local addCoordBox = Instance.new("TextBox")
+addCoordBox.Position = UDim2.fromOffset(119, 26)
+addCoordBox.Size = UDim2.new(1, -330, 0, 29)
+addCoordBox.BackgroundColor3 = C.panel2
+addCoordBox.BorderSizePixel = 0
+addCoordBox.ClearTextOnFocus = false
+addCoordBox.Text = ""
+addCoordBox.PlaceholderText = "Вставь X, Y, Z"
+addCoordBox.TextColor3 = C.text
+addCoordBox.PlaceholderColor3 = C.muted
+addCoordBox.TextSize = 8
+addCoordBox.Font = Enum.Font.Code
+addCoordBox.TextXAlignment = Enum.TextXAlignment.Left
+addCoordBox.Parent = addCard
+round(addCoordBox, 4)
+
+local addWaitBox = Instance.new("TextBox")
+addWaitBox.Position = UDim2.new(1, -205, 0, 26)
+addWaitBox.Size = UDim2.fromOffset(50, 29)
+addWaitBox.BackgroundColor3 = C.panel2
+addWaitBox.BorderSizePixel = 0
+addWaitBox.ClearTextOnFocus = false
+addWaitBox.Text = "2.0"
+addWaitBox.PlaceholderText = "сек"
+addWaitBox.TextColor3 = C.text
+addWaitBox.TextSize = 8
+addWaitBox.Font = Enum.Font.Code
+addWaitBox.Parent = addCard
+round(addWaitBox, 4)
+
+local fillCurrentBtn = makeButton(
+    addCard,
+    "POS",
+    UDim2.new(1, -149, 0, 26),
+    UDim2.fromOffset(45, 29)
+)
+fillCurrentBtn.TextSize = 8
+
+local addPointBtn = makeButton(
+    addCard,
+    "+ ДОБАВИТЬ",
+    UDim2.new(1, -98, 0, 26),
+    UDim2.fromOffset(90, 29)
+)
+addPointBtn.TextSize = 8
+
+addConnection(fillCurrentBtn.MouseButton1Click:Connect(function()
+    local root = getRoot()
+
+    if root then
+        addCoordBox.Text = formatXYZ(root.Position)
+        setFarmStatus("Текущие координаты вставлены")
     end
 end))
 
-addConnection(startTpBtn.MouseButton1Click:Connect(function()
-    syncStartFromBox()
-    safeTeleport(routeStart)
-    setFarmStatus("ТП на старт")
-end))
+-- ---------------------------------------------------------
+-- ROUTE LIST
+-- ---------------------------------------------------------
 
-local listTitle = makeLabel(
+makeLabel(
     farmPage,
-    "ТОЧКИ // координаты можно менять",
-    UDim2.fromOffset(2, 169),
-    UDim2.new(1, -4, 0, 17),
-    7,
+    "ПОРЯДОК ЛОКАЦИЙ // ↑ ↓ меняют порядок // POS = текущие координаты",
+    UDim2.fromOffset(4, 224),
+    UDim2.new(1, -8, 0, 18),
+    8,
     C.muted,
     Enum.Font.Code
 )
 
 local routeScroll = Instance.new("ScrollingFrame")
-routeScroll.Position = UDim2.fromOffset(0, 188)
-routeScroll.Size = UDim2.new(1, 0, 0, 111)
+routeScroll.Position = UDim2.fromOffset(0, 246)
+routeScroll.Size = UDim2.new(1, 0, 0, 260)
 routeScroll.BackgroundColor3 = C.panel
-routeScroll.BackgroundTransparency = 0.08
 routeScroll.BorderSizePixel = 0
-routeScroll.ScrollBarThickness = 4
-routeScroll.ScrollBarImageColor3 = C.cyan
+routeScroll.ScrollBarThickness = 5
+routeScroll.ScrollBarImageColor3 = C.text
 routeScroll.CanvasSize = UDim2.fromOffset(0, 0)
-routeScroll.AutomaticCanvasSize = Enum.AutomaticSize.None
 routeScroll.Parent = farmPage
-round(routeScroll, 7)
-addStroke(routeScroll, C.cyanDim, 0.65)
+round(routeScroll, 5)
+addStroke(routeScroll, C.cyanDim, 0.38)
+
+local routePadding = Instance.new("UIPadding")
+routePadding.PaddingTop = UDim.new(0, 5)
+routePadding.PaddingBottom = UDim.new(0, 5)
+routePadding.PaddingLeft = UDim.new(0, 5)
+routePadding.PaddingRight = UDim.new(0, 5)
+routePadding.Parent = routeScroll
 
 local routeListLayout = Instance.new("UIListLayout")
-routeListLayout.Padding = UDim.new(0, 3)
+routeListLayout.Padding = UDim.new(0, 4)
 routeListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 routeListLayout.Parent = routeScroll
 
@@ -1562,7 +1760,7 @@ local function updateCanvas()
         if routeListLayout and routeListLayout.Parent then
             routeScroll.CanvasSize = UDim2.fromOffset(
                 0,
-                routeListLayout.AbsoluteContentSize.Y + 6
+                routeListLayout.AbsoluteContentSize.Y + 12
             )
         end
     end)
@@ -1570,116 +1768,248 @@ end
 
 local rebuildRouteRows
 
+local function findChestIndex()
+    for i, data in ipairs(routePoints) do
+        if data.isChest then
+            return i
+        end
+    end
+
+    return nil
+end
+
+local function movePoint(index, direction)
+    if state.routeFarm then
+        setFarmStatus("Останови автофарм перед изменением порядка")
+        return
+    end
+
+    local data = routePoints[index]
+
+    if not data then
+        return
+    end
+
+    if data.isChest then
+        setFarmStatus("Сундук закреплён последней точкой")
+        return
+    end
+
+    local target = index + direction
+
+    if target < 1 or target > #routePoints then
+        return
+    end
+
+    local targetData = routePoints[target]
+
+    if targetData and targetData.isChest then
+        setFarmStatus("Сундук должен оставаться последним")
+        return
+    end
+
+    routePoints[index], routePoints[target] =
+        routePoints[target], routePoints[index]
+
+    rebuildRouteRows()
+
+    setFarmStatus(
+        "Порядок изменён // " ..
+        tostring(data.name)
+    )
+end
+
 local function makeRouteRow(index, data)
     local row = Instance.new("Frame")
-    row.Name = "Point_" .. tostring(index)
-    row.Size = UDim2.new(1, -6, 0, 32)
-    row.BackgroundColor3 = C.panel2
-    row.BackgroundTransparency = 0.03
+    row.Name = "RouteRow_" .. tostring(index)
+    row.Size = UDim2.new(1, 0, 0, 46)
+    row.BackgroundColor3 =
+        data.isChest and Color3.fromRGB(28, 28, 28) or C.panel2
     row.BorderSizePixel = 0
     row.LayoutOrder = index
     row.Parent = routeScroll
-    round(row, 5)
-
-    local nameLabel = makeLabel(
+    round(row, 4)
+    addStroke(
         row,
-        tostring(data.name or index),
-        UDim2.fromOffset(5, 0),
-        UDim2.fromOffset(42, 32),
-        7,
-        data.isChest and C.green or C.text,
-        Enum.Font.GothamBold
+        data.isChest and C.text or C.cyanDim,
+        data.isChest and 0.40 or 0.70
     )
 
-    local coordInput = Instance.new("TextBox")
-    coordInput.Position = UDim2.fromOffset(45, 4)
-    coordInput.Size = UDim2.new(1, -132, 0, 24)
-    coordInput.BackgroundColor3 = C.bg
-    coordInput.BackgroundTransparency = 0.18
-    coordInput.BorderSizePixel = 0
-    coordInput.ClearTextOnFocus = false
-    coordInput.Text = string.format(
-        "%.2f, %.2f, %.2f",
-        data.pos.X,
-        data.pos.Y,
-        data.pos.Z
+    local orderLabel = makeLabel(
+        row,
+        "#" .. tostring(index),
+        UDim2.fromOffset(7, 0),
+        UDim2.fromOffset(28, 46),
+        8,
+        C.muted,
+        Enum.Font.Code
     )
-    coordInput.TextColor3 = C.text
-    coordInput.TextSize = 7
-    coordInput.Font = Enum.Font.Code
-    coordInput.TextXAlignment = Enum.TextXAlignment.Left
-    coordInput.Parent = row
-    round(coordInput, 4)
 
-    local waitInput = Instance.new("TextBox")
-    waitInput.Position = UDim2.new(1, -82, 0, 4)
-    waitInput.Size = UDim2.fromOffset(45, 24)
-    waitInput.BackgroundColor3 = C.bg
-    waitInput.BackgroundTransparency = 0.18
-    waitInput.BorderSizePixel = 0
-    waitInput.ClearTextOnFocus = false
-    waitInput.Text = string.format("%.1f", tonumber(data.wait) or 2)
-    waitInput.PlaceholderText = "сек"
-    waitInput.TextColor3 = C.green
-    waitInput.TextSize = 7
-    waitInput.Font = Enum.Font.Code
-    waitInput.Parent = row
-    round(waitInput, 4)
+    local nameBox = Instance.new("TextBox")
+    nameBox.Position = UDim2.fromOffset(36, 8)
+    nameBox.Size = UDim2.fromOffset(95, 30)
+    nameBox.BackgroundColor3 = C.bg
+    nameBox.BackgroundTransparency = 0
+    nameBox.BorderSizePixel = 0
+    nameBox.ClearTextOnFocus = false
+    nameBox.Text = tostring(data.name or ("Локация " .. index))
+    nameBox.TextColor3 = C.text
+    nameBox.TextSize = 8
+    nameBox.Font = Enum.Font.GothamMedium
+    nameBox.Parent = row
+    nameBox.TextEditable = not data.isChest
+    round(nameBox, 4)
+
+    local coordBox = Instance.new("TextBox")
+    coordBox.Position = UDim2.fromOffset(137, 8)
+    coordBox.Size = UDim2.new(1, -365, 0, 30)
+    coordBox.BackgroundColor3 = C.bg
+    coordBox.BorderSizePixel = 0
+    coordBox.ClearTextOnFocus = false
+    coordBox.Text = formatXYZ(data.pos)
+    coordBox.PlaceholderText = "X, Y, Z"
+    coordBox.TextColor3 = C.text
+    coordBox.PlaceholderColor3 = C.muted
+    coordBox.TextSize = 8
+    coordBox.Font = Enum.Font.Code
+    coordBox.TextXAlignment = Enum.TextXAlignment.Left
+    coordBox.Parent = row
+    round(coordBox, 4)
+
+    local waitBox = Instance.new("TextBox")
+    waitBox.Position = UDim2.new(1, -222, 0, 8)
+    waitBox.Size = UDim2.fromOffset(48, 30)
+    waitBox.BackgroundColor3 = C.bg
+    waitBox.BorderSizePixel = 0
+    waitBox.ClearTextOnFocus = false
+    waitBox.Text = string.format("%.1f", tonumber(data.wait) or 2)
+    waitBox.PlaceholderText = "сек"
+    waitBox.TextColor3 = C.text
+    waitBox.TextSize = 8
+    waitBox.Font = Enum.Font.Code
+    waitBox.Parent = row
+    round(waitBox, 4)
+
+    local posBtn = makeButton(
+        row,
+        "POS",
+        UDim2.new(1, -168, 0, 8),
+        UDim2.fromOffset(38, 30)
+    )
+    posBtn.TextSize = 7
+
+    local upBtn = makeButton(
+        row,
+        "↑",
+        UDim2.new(1, -124, 0, 8),
+        UDim2.fromOffset(28, 30)
+    )
+    upBtn.TextSize = 14
+
+    local downBtn = makeButton(
+        row,
+        "↓",
+        UDim2.new(1, -92, 0, 8),
+        UDim2.fromOffset(28, 30)
+    )
+    downBtn.TextSize = 14
 
     local deleteBtn = makeButton(
         row,
-        "×",
-        UDim2.new(1, -32, 0, 4),
-        UDim2.fromOffset(27, 24)
+        data.isChest and "●" or "×",
+        UDim2.new(1, -60, 0, 8),
+        UDim2.fromOffset(28, 30)
     )
-    deleteBtn.BackgroundColor3 = C.red
-    deleteBtn.TextSize = 11
+    deleteBtn.TextSize = data.isChest and 8 or 13
 
-    addConnection(coordInput.FocusLost:Connect(function()
-        local parsed = parseXYZ(coordInput.Text)
+    addConnection(nameBox.FocusLost:Connect(function()
+        if data.isChest then
+            nameBox.Text = "СУНДУК"
+            return
+        end
+
+        local value = tostring(nameBox.Text or "")
+        value = value:gsub("^%s+", ""):gsub("%s+$", "")
+
+        if value == "" then
+            value = "Локация " .. tostring(index)
+        end
+
+        data.name = value
+        nameBox.Text = value
+    end))
+
+    addConnection(coordBox.FocusLost:Connect(function()
+        local parsed = parseXYZ(coordBox.Text)
 
         if parsed then
             data.pos = parsed
-            coordInput.Text = string.format(
-                "%.2f, %.2f, %.2f",
-                parsed.X,
-                parsed.Y,
-                parsed.Z
-            )
-        else
-            coordInput.Text = string.format(
-                "%.2f, %.2f, %.2f",
-                data.pos.X,
-                data.pos.Y,
-                data.pos.Z
-            )
         end
+
+        coordBox.Text = formatXYZ(data.pos)
     end))
 
-    addConnection(waitInput.FocusLost:Connect(function()
+    addConnection(waitBox.FocusLost:Connect(function()
         local value = tonumber(
-            tostring(waitInput.Text):gsub(",", ".")
+            tostring(waitBox.Text):gsub(",", ".")
         )
 
         if value then
             data.wait = math.clamp(value, 0.05, 120)
         end
 
-        waitInput.Text = string.format(
+        waitBox.Text = string.format(
             "%.1f",
             tonumber(data.wait) or 2
         )
     end))
 
-    addConnection(deleteBtn.MouseButton1Click:Connect(function()
+    addConnection(posBtn.MouseButton1Click:Connect(function()
         if state.routeFarm then
-            setFarmStatus("Сначала останови автофарм")
+            setFarmStatus("Останови автофарм перед изменением точки")
+            return
+        end
+
+        local root = getRoot()
+
+        if not root then
+            return
+        end
+
+        data.pos = root.Position
+        coordBox.Text = formatXYZ(data.pos)
+
+        setFarmStatus(
+            "Координаты обновлены // " ..
+            tostring(data.name)
+        )
+    end))
+
+    addConnection(upBtn.MouseButton1Click:Connect(function()
+        movePoint(index, -1)
+    end))
+
+    addConnection(downBtn.MouseButton1Click:Connect(function()
+        movePoint(index, 1)
+    end))
+
+    addConnection(deleteBtn.MouseButton1Click:Connect(function()
+        if data.isChest then
+            setFarmStatus("Сундук закреплён и не удаляется")
+            return
+        end
+
+        if state.routeFarm then
+            setFarmStatus("Останови автофарм перед удалением")
             return
         end
 
         table.remove(routePoints, index)
         rebuildRouteRows()
-        setFarmStatus("Точка удалена")
+
+        setFarmStatus(
+            "Локация удалена"
+        )
     end))
 
     routeRows[index] = row
@@ -1695,11 +2025,10 @@ rebuildRouteRows = function()
     table.clear(routeRows)
 
     for i, data in ipairs(routePoints) do
-        -- Сундук остаётся специальной точкой даже после добавления новых.
         if data.isChest then
-            data.name = tostring(i) .. " СУНДУК"
-        else
-            data.name = tostring(i)
+            data.name = "СУНДУК"
+        elseif not data.name or data.name == "" then
+            data.name = "Локация " .. tostring(i)
         end
 
         makeRouteRow(i, data)
@@ -1708,118 +2037,152 @@ rebuildRouteRows = function()
     updateCanvas()
 end
 
-addConnection(routeListLayout:GetPropertyChangedSignal(
-    "AbsoluteContentSize"
-):Connect(updateCanvas))
+addConnection(
+    routeListLayout:GetPropertyChangedSignal(
+        "AbsoluteContentSize"
+    ):Connect(updateCanvas)
+)
 
 rebuildRouteRows()
 
-local addCurrentBtn = makeButton(
-    farmPage,
-    "+ ТЕКУЩАЯ ТОЧКА",
-    UDim2.fromOffset(0, 306),
-    UDim2.new(0.55, -3, 0, 29)
-)
-addCurrentBtn.TextSize = 7
+-- ---------------------------------------------------------
+-- ADD BUTTONS
+-- ---------------------------------------------------------
 
-local newTimeBox = Instance.new("TextBox")
-newTimeBox.Position = UDim2.new(0.55, 3, 0, 306)
-newTimeBox.Size = UDim2.new(0.22, -3, 0, 29)
-newTimeBox.BackgroundColor3 = C.panel2
-newTimeBox.BackgroundTransparency = 0.03
-newTimeBox.BorderSizePixel = 0
-newTimeBox.ClearTextOnFocus = false
-newTimeBox.Text = "2.0"
-newTimeBox.PlaceholderText = "сек"
-newTimeBox.TextColor3 = C.green
-newTimeBox.TextSize = 8
-newTimeBox.Font = Enum.Font.Code
-newTimeBox.Parent = farmPage
-round(newTimeBox, 6)
-addStroke(newTimeBox, C.cyanDim, 0.58)
-
-local clearRouteBtn = makeButton(
-    farmPage,
-    "ОЧИСТ.",
-    UDim2.new(0.77, 3, 0, 306),
-    UDim2.new(0.23, -3, 0, 29)
-)
-clearRouteBtn.TextSize = 7
-clearRouteBtn.BackgroundColor3 = C.red
-clearRouteBtn.BackgroundTransparency = 0.20
-
-addConnection(addCurrentBtn.MouseButton1Click:Connect(function()
+addConnection(addPointBtn.MouseButton1Click:Connect(function()
     if state.routeFarm then
-        setFarmStatus("Сначала останови автофарм")
+        setFarmStatus("Останови автофарм перед добавлением")
         return
     end
 
-    local root = getRoot()
-    if not root then
-        setFarmStatus("Персонаж не найден")
+    local pos = parseXYZ(addCoordBox.Text)
+
+    if not pos then
+        setFarmStatus("Неверные координаты // формат X, Y, Z")
         return
     end
 
     local seconds = tonumber(
-        tostring(newTimeBox.Text):gsub(",", ".")
+        tostring(addWaitBox.Text):gsub(",", ".")
     ) or 2
 
     seconds = math.clamp(seconds, 0.05, 120)
 
-    local insertIndex = #routePoints + 1
+    local name = tostring(addNameBox.Text or "")
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
 
-    for i, data in ipairs(routePoints) do
-        if data.isChest then
-            insertIndex = i
-            break
-        end
+    if name == "" then
+        name = "Новая локация"
     end
+
+    local chestIndex = findChestIndex()
+    local insertIndex = chestIndex or (#routePoints + 1)
 
     table.insert(
         routePoints,
         insertIndex,
         {
-            name = tostring(insertIndex),
-            pos = root.Position,
+            name = name,
+            pos = pos,
             wait = seconds,
             isChest = false
         }
     )
 
+    addNameBox.Text = ""
+    addCoordBox.Text = ""
+
     rebuildRouteRows()
 
     setFarmStatus(
-        "Добавлена точка #" ..
-        tostring(insertIndex) ..
-        " // перед сундуком"
+        "Добавлено: " .. name
     )
 end))
 
-addConnection(clearRouteBtn.MouseButton1Click:Connect(function()
+-- ---------------------------------------------------------
+-- FOOTER / ROUTE MANAGEMENT
+-- ---------------------------------------------------------
+
+local footer = Instance.new("Frame")
+footer.Position = UDim2.fromOffset(0, 513)
+footer.Size = UDim2.new(1, 0, 0, 50)
+footer.BackgroundColor3 = C.panel
+footer.BorderSizePixel = 0
+footer.Parent = farmPage
+round(footer, 5)
+addStroke(footer, C.cyanDim, 0.38)
+
+local resetBtn = makeButton(
+    footer,
+    "СБРОСИТЬ МАРШРУТ",
+    UDim2.fromOffset(8, 8),
+    UDim2.fromOffset(135, 34)
+)
+resetBtn.TextSize = 8
+
+local clearBtn = makeButton(
+    footer,
+    "ОЧИСТИТЬ ЛОКАЦИИ",
+    UDim2.fromOffset(149, 8),
+    UDim2.fromOffset(140, 34)
+)
+clearBtn.TextSize = 8
+
+farmStatusLabel = makeLabel(
+    footer,
+    "Готово // редактируй маршрут",
+    UDim2.fromOffset(300, 2),
+    UDim2.new(1, -308, 1, -4),
+    8,
+    C.muted,
+    Enum.Font.Code
+)
+farmStatusLabel.TextWrapped = true
+farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Center
+
+addConnection(resetBtn.MouseButton1Click:Connect(function()
     if state.routeFarm then
         setFarmStatus("Сначала останови автофарм")
         return
     end
 
-    table.clear(routePoints)
+    routeStart = DEFAULT_ROUTE_START
+    startBox.Text = formatXYZ(routeStart)
+    routePoints = cloneRoute(DEFAULT_ROUTE_POINTS)
+
     rebuildRouteRows()
-    setFarmStatus("Маршрут очищен")
+
+    setFarmStatus("Маршрут восстановлен")
 end))
 
-farmStatusLabel = makeLabel(
-    farmPage,
-    "Готово // таймеры редактируются // новые точки вставляются перед сундуком",
-    UDim2.fromOffset(2, 340),
-    UDim2.new(1, -4, 0, 25),
-    7,
-    C.muted,
-    Enum.Font.Code
-)
-farmStatusLabel.TextWrapped = true
-farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
+addConnection(clearBtn.MouseButton1Click:Connect(function()
+    if state.routeFarm then
+        setFarmStatus("Сначала останови автофарм")
+        return
+    end
+
+    local chest = nil
+
+    for _, data in ipairs(routePoints) do
+        if data.isChest then
+            chest = data
+            break
+        end
+    end
+
+    table.clear(routePoints)
+
+    if chest then
+        routePoints[1] = chest
+    end
+
+    rebuildRouteRows()
+
+    setFarmStatus("Локации очищены // сундук сохранён")
+end))
 
 -- ---------------------------------------------------------
--- ROUTE FARM ENGINE V14
+-- ROUTE FARM ENGINE V15
 --
 -- Максимально простая схема:
 --
@@ -2404,5 +2767,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V14 RU] Loaded")
-print("[CYBER PANEL V14 RU] All functions OFF")
+print("[CYBER PANEL V15 RU] Loaded")
+print("[CYBER PANEL V15 RU] All functions OFF")
