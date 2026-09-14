@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V23 RU
+    CYBER PANEL V24 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -139,6 +139,7 @@ for _, name in ipairs({
     "CyberPanelV21",
     "CyberPanelV22",
     "CyberPanelV23",
+    "CyberPanelV24",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -223,7 +224,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV23"
+gui.Name = "CyberPanelV24"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -1374,8 +1375,13 @@ local DEFAULT_ROUTE_POINTS = {
         wait = 0.5
     },
     {
+        name = "Локация 16",
+        pos = Vector3.new(4501.21, 4.19, 1529.98),
+        wait = 2.0
+    },
+    {
         name = "СУНДУК",
-        pos = Vector3.new(4489.35, 4.99, 1472.45),
+        pos = Vector3.new(4490.51, 4.99, 1577.78),
         wait = 2.0,
         isChest = true
     },
@@ -2487,7 +2493,7 @@ end
 --
 --   ДОМ/СТАРТ
 --      ↓
---   1 → 2 → 3 → ... → 15 → СУНДУК
+--   1 → 2 → 3 → ... → 16 → СУНДУК
 --      ↓
 --   ждём таймер сундука
 --      ↓
@@ -3082,5 +3088,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V23 RU] Loaded")
-print("[CYBER PANEL V23 RU] All functions OFF")
+print("[CYBER PANEL V24 RU] Loaded")
+print("[CYBER PANEL V24 RU] All functions OFF")
