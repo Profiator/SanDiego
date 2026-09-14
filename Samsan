@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V24 RU
+    CYBER PANEL V25 RU
     Компактная версия для Xeno / Roblox.
 
     Вкладка "ПЕРСОНАЖ":
@@ -64,6 +64,11 @@ local state = {
 
     routeFarm = false,
     routeLoop = true,
+
+    -- Экспериментальные множители запросов.
+    -- x1 = обычное поведение.
+    powerMultiplier = 1,
+    damageMultiplier = 1,
 }
 
 local alive = true
@@ -72,6 +77,8 @@ local originalCollisions = {}
 local originalWalkSpeed = nil
 local autoStatusLabel = nil
 local farmStatusLabel = nil
+local powerStatusLabel = nil
+local damageStatusLabel = nil
 
 local function addConnection(c)
     table.insert(connections, c)
@@ -140,6 +147,7 @@ for _, name in ipairs({
     "CyberPanelV22",
     "CyberPanelV23",
     "CyberPanelV24",
+    "CyberPanelV25",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -224,7 +232,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV24"
+gui.Name = "CyberPanelV25"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -324,25 +332,41 @@ local charTab = makeButton(
     tabs,
     "ПЕРСОНАЖ",
     UDim2.fromOffset(0, 0),
-    UDim2.new(0.3333, -4, 1, 0)
+    UDim2.new(0.20, -4, 1, 0)
 )
-charTab.TextSize = 16
+charTab.TextSize = 13
 
 local autoTab = makeButton(
     tabs,
     "АВТО",
-    UDim2.new(0.3333, 2, 0, 0),
-    UDim2.new(0.3333, -4, 1, 0)
+    UDim2.new(0.20, 2, 0, 0),
+    UDim2.new(0.20, -4, 1, 0)
 )
-autoTab.TextSize = 16
+autoTab.TextSize = 13
 
 local farmTab = makeButton(
     tabs,
     "АВТОФАРМ",
-    UDim2.new(0.6666, 4, 0, 0),
-    UDim2.new(0.3334, -4, 1, 0)
+    UDim2.new(0.40, 4, 0, 0),
+    UDim2.new(0.20, -4, 1, 0)
 )
-farmTab.TextSize = 16
+farmTab.TextSize = 13
+
+local powerTab = makeButton(
+    tabs,
+    "МОЩЬ",
+    UDim2.new(0.60, 6, 0, 0),
+    UDim2.new(0.20, -4, 1, 0)
+)
+powerTab.TextSize = 13
+
+local damageTab = makeButton(
+    tabs,
+    "УРОН",
+    UDim2.new(0.80, 8, 0, 0),
+    UDim2.new(0.20, -8, 1, 0)
+)
+damageTab.TextSize = 13
 
 local charPage = Instance.new("Frame")
 charPage.Position = UDim2.fromOffset(10, 138)
@@ -364,23 +388,46 @@ farmPage.BackgroundTransparency = 1
 farmPage.Visible = false
 farmPage.Parent = main
 
+local powerPage = Instance.new("Frame")
+powerPage.Position = charPage.Position
+powerPage.Size = charPage.Size
+powerPage.BackgroundTransparency = 1
+powerPage.Visible = false
+powerPage.Parent = main
+
+local damagePage = Instance.new("Frame")
+damagePage.Position = charPage.Position
+damagePage.Size = charPage.Size
+damagePage.BackgroundTransparency = 1
+damagePage.Visible = false
+damagePage.Parent = main
+
 local function setTab(name)
     local charActive = name == "CHAR"
     local autoActive = name == "AUTO"
     local farmActive = name == "FARM"
+    local powerActive = name == "POWER"
+    local damageActive = name == "DAMAGE"
 
     charPage.Visible = charActive
     autoPage.Visible = autoActive
     farmPage.Visible = farmActive
+    powerPage.Visible = powerActive
+    damagePage.Visible = damageActive
 
-    charTab.BackgroundColor3 = charActive and C.cyan or C.panel2
-    charTab.TextColor3 = charActive and C.bg or C.text
+    local function paint(tab, active)
+        tab.BackgroundColor3 =
+            active and C.cyan or C.panel2
 
-    autoTab.BackgroundColor3 = autoActive and C.cyan or C.panel2
-    autoTab.TextColor3 = autoActive and C.bg or C.text
+        tab.TextColor3 =
+            active and C.bg or C.text
+    end
 
-    farmTab.BackgroundColor3 = farmActive and C.cyan or C.panel2
-    farmTab.TextColor3 = farmActive and C.bg or C.text
+    paint(charTab, charActive)
+    paint(autoTab, autoActive)
+    paint(farmTab, farmActive)
+    paint(powerTab, powerActive)
+    paint(damageTab, damageActive)
 end
 
 setTab("CHAR")
@@ -395,6 +442,14 @@ end))
 
 addConnection(farmTab.MouseButton1Click:Connect(function()
     setTab("FARM")
+end))
+
+addConnection(powerTab.MouseButton1Click:Connect(function()
+    setTab("POWER")
+end))
+
+addConnection(damageTab.MouseButton1Click:Connect(function()
+    setTab("DAMAGE")
 end))
 
 -- =========================================================
@@ -811,14 +866,86 @@ addConnection(
 -- То есть для настоящей атаки серверу НЕ нужны enemyId/position.
 -- Сервер сам выбирает цель.
 
+local powerRequestCount = 0
+local damageRequestCount = 0
+
+local function firePowerRequests(count)
+    count = math.clamp(
+        math.floor(tonumber(count) or 1),
+        1,
+        10
+    )
+
+    for i = 1, count do
+        PlayerClick:FireServer()
+        powerRequestCount += 1
+
+        -- Небольшой разнос пакетов.
+        if i < count then
+            task.wait(0.008)
+        end
+    end
+end
+
+local function fireDamageRequests(count)
+    count = math.clamp(
+        math.floor(tonumber(count) or 1),
+        1,
+        10
+    )
+
+    for i = 1, count do
+        RequestAttack:FireServer()
+        damageRequestCount += 1
+
+        if i < count then
+            task.wait(0.008)
+        end
+    end
+end
+
 local function performServerAttack()
     local ok = pcall(function()
-        RequestAttack:FireServer()
-        PlayerClick:FireServer()
+        -- МОЩЬ и УРОН разделены.
+        fireDamageRequests(state.damageMultiplier)
+        firePowerRequests(state.powerMultiplier)
     end)
 
     return ok
 end
+
+-- Ручной ЛКМ:
+-- игра сама отправляет обычный x1.
+-- Скрипт добавляет только дополнительные запросы для выбранного x2/x5/x10.
+addConnection(
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then
+            return
+        end
+
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+            return
+        end
+
+        task.spawn(function()
+            pcall(function()
+                local extraDamage =
+                    math.max(0, state.damageMultiplier - 1)
+
+                local extraPower =
+                    math.max(0, state.powerMultiplier - 1)
+
+                if extraDamage > 0 then
+                    fireDamageRequests(extraDamage)
+                end
+
+                if extraPower > 0 then
+                    firePowerRequests(extraPower)
+                end
+            end)
+        end)
+    end)
+)
 
 -- Локальные fallbacks оставляем только как резерв.
 local function performLocalClickFallback()
@@ -882,6 +1009,200 @@ task.spawn(function()
         end
     end
 end)
+
+task.spawn(function()
+    while alive do
+        if powerStatusLabel and powerStatusLabel.Parent then
+            powerStatusLabel.Text =
+                string.format(
+                    "МОЩЬ: x%d // PlayerClick отправлено: %d",
+                    state.powerMultiplier,
+                    powerRequestCount
+                )
+        end
+
+        if damageStatusLabel and damageStatusLabel.Parent then
+            damageStatusLabel.Text =
+                string.format(
+                    "УРОН: x%d // RequestAttack отправлено: %d",
+                    state.damageMultiplier,
+                    damageRequestCount
+                )
+        end
+
+        task.wait(0.5)
+    end
+end)
+
+-- =========================================================
+-- POWER / DAMAGE MULTIPLIER TABS
+-- =========================================================
+
+local function makeMultiplierPage(
+    page,
+    titleText,
+    subtitleText,
+    stateKey,
+    statusKind
+)
+    local info = Instance.new("Frame")
+    info.Position = UDim2.fromOffset(0, 0)
+    info.Size = UDim2.new(1, 0, 0, 78)
+    info.BackgroundColor3 = C.panel
+    info.BorderSizePixel = 0
+    info.Parent = page
+    round(info, 6)
+    addStroke(info, C.cyanDim, 0.45)
+
+    makeLabel(
+        info,
+        titleText,
+        UDim2.fromOffset(14, 7),
+        UDim2.new(1, -28, 0, 26),
+        16,
+        C.text,
+        Enum.Font.GothamBold
+    )
+
+    local sub = makeLabel(
+        info,
+        subtitleText,
+        UDim2.fromOffset(14, 37),
+        UDim2.new(1, -28, 0, 31),
+        11,
+        C.muted,
+        Enum.Font.Code
+    )
+    sub.TextWrapped = true
+
+    local selectCard = Instance.new("Frame")
+    selectCard.Position = UDim2.fromOffset(0, 88)
+    selectCard.Size = UDim2.new(1, 0, 0, 118)
+    selectCard.BackgroundColor3 = C.panel
+    selectCard.BorderSizePixel = 0
+    selectCard.Parent = page
+    round(selectCard, 6)
+    addStroke(selectCard, C.cyanDim, 0.45)
+
+    makeLabel(
+        selectCard,
+        "МНОЖИТЕЛЬ",
+        UDim2.fromOffset(14, 6),
+        UDim2.new(1, -28, 0, 22),
+        12,
+        C.text,
+        Enum.Font.GothamBold
+    )
+
+    local buttons = {}
+    local values = {1, 2, 5, 10}
+
+    local function refreshButtons()
+        for value, button in pairs(buttons) do
+            local active = state[stateKey] == value
+
+            button.BackgroundColor3 =
+                active and C.text or C.panel2
+
+            button.TextColor3 =
+                active and C.bg or C.text
+        end
+    end
+
+    for i, value in ipairs(values) do
+        local xScale = (i - 1) * 0.25
+
+        local button = makeButton(
+            selectCard,
+            "x" .. tostring(value),
+            UDim2.new(xScale, 8, 0, 40),
+            UDim2.new(0.25, -12, 0, 52)
+        )
+
+        button.TextSize = 17
+        buttons[value] = button
+
+        addConnection(
+            button.MouseButton1Click:Connect(function()
+                state[stateKey] = value
+                refreshButtons()
+
+                if statusKind == "power" and powerStatusLabel then
+                    powerStatusLabel.Text =
+                        "МОЩЬ: x" .. tostring(value) ..
+                        " // PlayerClick пакетов за удар: " ..
+                        tostring(value)
+                elseif statusKind == "damage" and damageStatusLabel then
+                    damageStatusLabel.Text =
+                        "УРОН: x" .. tostring(value) ..
+                        " // RequestAttack пакетов за удар: " ..
+                        tostring(value)
+                end
+            end)
+        )
+    end
+
+    refreshButtons()
+
+    local statusCard = Instance.new("Frame")
+    statusCard.Position = UDim2.fromOffset(0, 216)
+    statusCard.Size = UDim2.new(1, 0, 0, 82)
+    statusCard.BackgroundColor3 = C.panel
+    statusCard.BorderSizePixel = 0
+    statusCard.Parent = page
+    round(statusCard, 6)
+    addStroke(statusCard, C.cyanDim, 0.45)
+
+    local label = makeLabel(
+        statusCard,
+        "",
+        UDim2.fromOffset(14, 7),
+        UDim2.new(1, -28, 0, 64),
+        12,
+        C.text,
+        Enum.Font.Code
+    )
+    label.TextWrapped = true
+    label.TextYAlignment = Enum.TextYAlignment.Top
+
+    if statusKind == "power" then
+        powerStatusLabel = label
+        label.Text =
+            "МОЩЬ: x1 // PlayerClick пакетов за удар: 1"
+    else
+        damageStatusLabel = label
+        label.Text =
+            "УРОН: x1 // RequestAttack пакетов за удар: 1"
+    end
+
+    local note = makeLabel(
+        page,
+        "Важно: это множитель отправляемых боевых запросов. Если сервер игры ограничивает частоту запросов, фактический прирост может быть меньше выбранного x.",
+        UDim2.fromOffset(8, 315),
+        UDim2.new(1, -16, 0, 74),
+        11,
+        C.muted,
+        Enum.Font.Code
+    )
+    note.TextWrapped = true
+    note.TextYAlignment = Enum.TextYAlignment.Top
+end
+
+makeMultiplierPage(
+    powerPage,
+    "МОЩЬ С УДАРА",
+    "x2 / x5 / x10 от обычного запроса PlayerClick. Работает и с автокликом панели, и добавляет дополнительные пакеты к ручному ЛКМ.",
+    "powerMultiplier",
+    "power"
+)
+
+makeMultiplierPage(
+    damagePage,
+    "УРОН",
+    "x2 / x5 / x10 через дополнительные RequestAttack. Сервер всё равно остаётся окончательным источником реального урона.",
+    "damageMultiplier",
+    "damage"
+)
 
 -- =========================================================
 -- AUTO TAB // AUTO REBIRTH + HARD ANTI-AFK
@@ -3035,6 +3356,8 @@ local function shutdown()
     state.autoRebirth = false
     state.antiAfk = false
     state.routeFarm = false
+    state.powerMultiplier = 1
+    state.damageMultiplier = 1
     routeIndex = 1
     routeStarted = false
     restoreIdleConnections()
@@ -3088,5 +3411,5 @@ addConnection(
     closeBtn.MouseButton1Click:Connect(shutdown)
 )
 
-print("[CYBER PANEL V24 RU] Loaded")
-print("[CYBER PANEL V24 RU] All functions OFF")
+print("[CYBER PANEL V25 RU] Loaded")
+print("[CYBER PANEL V25 RU] All functions OFF")
