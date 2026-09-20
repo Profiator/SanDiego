@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V29 RU
+    CYBER PANEL V30 RU
 
     Вкладка "ПЕРСОНАЖ":
       • Ник + координаты + копирование
@@ -14,7 +14,7 @@
       • Жёсткий Anti-AFK
 
     Вкладка "АВТОФАРМ":
-      • Новый маршрут: 11 локаций + новый СУНДУК (5237.72, 4.83, 1195.88)
+      • Новый маршрут: 12 локаций + СУНДУК (5238.85, 4.83, 1302.39)
       • Редактирование координат и времени
       • Локальное сохранение маршрута в JSON через executor
 
@@ -112,7 +112,7 @@ for _, name in ipairs({
     "CyberPanelV12", "CyberPanelV13", "CyberPanelV14", "CyberPanelV15",
     "CyberPanelV16", "CyberPanelV17", "CyberPanelV18", "CyberPanelV19",
     "CyberPanelV20", "CyberPanelV21", "CyberPanelV22", "CyberPanelV23",
-    "CyberPanelV27", "CyberPanelV28", "CyberPanelV29",
+    "CyberPanelV27", "CyberPanelV28", "CyberPanelV29", "CyberPanelV30",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -189,7 +189,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV29"
+gui.Name = "CyberPanelV30"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -213,7 +213,7 @@ topLine.BackgroundColor3 = C.cyan
 topLine.BorderSizePixel = 0
 topLine.Parent = main
 
-makeLabel(main, "BLACK // PANEL V29",
+makeLabel(main, "BLACK // PANEL V30",
     UDim2.fromOffset(12, 7), UDim2.fromOffset(190, 19),
     16, C.text, Enum.Font.GothamBold)
 
@@ -864,39 +864,41 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- AUTOFARM // МАРШРУТ V29
+-- AUTOFARM // МАРШРУТ V30
 -- =========================================================
 -- ДОМ: 5251.17, 5.83, 93.96
--- 1)  5253.29, 5.84, 198.80   — 2.0 сек
--- 2)  5250.78, 5.84, 286.06   — 2.0 сек
--- 3)  5251.99, 5.84, 384.56   — 3.0 сек
--- 4)  5251.91, 5.48, 490.83   — 3.0 сек
--- 5)  5250.73, 5.48, 572.98   — 3.0 сек
--- 6)  5250.48, 5.48, 676.42   — 4.0 сек
--- 7)  5246.65, 5.41, 753.62   — 0.5 сек
--- 8)  5249.53, 4.03, 837.09   — 3.0 сек
--- 9)  5252.39, 4.03, 930.84   — 4.0 сек
--- 10) 5250.60, 4.03, 1030.22  — 4.0 сек
+-- 1)  5249.24, 4.46, 161.55   — 2.0 сек
+-- 2)  5251.74, 4.46, 246.99   — 2.0 сек
+-- 3)  5250.60, 4.46, 338.45   — 3.0 сек
+-- 4)  5250.56, 4.10, 453.07   — 3.0 сек
+-- 5)  5248.76, 4.10, 540.91   — 3.0 сек
+-- 6)  5251.60, 4.10, 637.94   — 3.0 сек
+-- 7)  5250.70, 4.03, 744.80   — 3.5 сек
+-- 8)  5249.93, 4.03, 832.44   — 3.0 сек
+-- 9)  5252.60, 4.03, 924.12   — 4.0 сек
+-- 10) 5251.56, 4.03, 1035.15  — 4.0 сек
 -- 11) 5249.67, 4.03, 1119.96  — 5.0 сек
--- 12) СУНДУК: 5237.72, 4.83, 1195.88 — 1.0 сек
+-- 12) 5249.65, 4.03, 1213.57  — 0.5 сек (быстрый пропуск)
+-- 13) СУНДУК: 5238.85, 4.83, 1302.39 — 2.0 сек
 -- → дом → по кругу.
 
 local DEFAULT_ROUTE_START = Vector3.new(5251.17, 5.83, 93.96)
 local routeStart = DEFAULT_ROUTE_START
 
 local DEFAULT_ROUTE_POINTS = {
-    { name = "Локация 1",  pos = Vector3.new(5253.29, 5.84, 198.80),  wait = 2.0 },
-    { name = "Локация 2",  pos = Vector3.new(5250.78, 5.84, 286.06),  wait = 2.0 },
-    { name = "Локация 3",  pos = Vector3.new(5251.99, 5.84, 384.56),  wait = 3.0 },
-    { name = "Локация 4",  pos = Vector3.new(5251.91, 5.48, 490.83),  wait = 3.0 },
-    { name = "Локация 5",  pos = Vector3.new(5250.73, 5.48, 572.98),  wait = 3.0 },
-    { name = "Локация 6",  pos = Vector3.new(5250.48, 5.48, 676.42),  wait = 4.0 },
-    { name = "Локация 7",  pos = Vector3.new(5246.65, 5.41, 753.62),  wait = 0.5 },
-    { name = "Локация 8",  pos = Vector3.new(5249.53, 4.03, 837.09),  wait = 3.0 },
-    { name = "Локация 9",  pos = Vector3.new(5252.39, 4.03, 930.84),  wait = 4.0 },
-    { name = "Локация 10", pos = Vector3.new(5250.60, 4.03, 1030.22), wait = 4.0 },
+    { name = "Локация 1",  pos = Vector3.new(5249.24, 4.46, 161.55),  wait = 2.0 },
+    { name = "Локация 2",  pos = Vector3.new(5251.74, 4.46, 246.99),  wait = 2.0 },
+    { name = "Локация 3",  pos = Vector3.new(5250.60, 4.46, 338.45),  wait = 3.0 },
+    { name = "Локация 4",  pos = Vector3.new(5250.56, 4.10, 453.07),  wait = 3.0 },
+    { name = "Локация 5",  pos = Vector3.new(5248.76, 4.10, 540.91),  wait = 3.0 },
+    { name = "Локация 6",  pos = Vector3.new(5251.60, 4.10, 637.94),  wait = 3.0 },
+    { name = "Локация 7",  pos = Vector3.new(5250.70, 4.03, 744.80),  wait = 3.5 },
+    { name = "Локация 8",  pos = Vector3.new(5249.93, 4.03, 832.44),  wait = 3.0 },
+    { name = "Локация 9",  pos = Vector3.new(5252.60, 4.03, 924.12),  wait = 4.0 },
+    { name = "Локация 10", pos = Vector3.new(5251.56, 4.03, 1035.15), wait = 4.0 },
     { name = "Локация 11", pos = Vector3.new(5249.67, 4.03, 1119.96), wait = 5.0 },
-    { name = "СУНДУК",     pos = Vector3.new(5237.72, 4.83, 1195.88), wait = 1.0, isChest = true },
+    { name = "Локация 12", pos = Vector3.new(5249.65, 4.03, 1213.57), wait = 0.5 },
+    { name = "СУНДУК",     pos = Vector3.new(5238.85, 4.83, 1302.39), wait = 2.0, isChest = true },
 }
 
 local function cloneRoute(source)
@@ -915,13 +917,13 @@ end
 local routePoints = cloneRoute(DEFAULT_ROUTE_POINTS)
 
 -- =========================================================
--- LOCAL ROUTE STORAGE (файл V29 — старый V28 не подхватится)
+-- LOCAL ROUTE STORAGE (файл V30 — старые V28/V29 не подтянутся)
 -- =========================================================
 
 local LOCAL_ROUTE_FILE =
     "CYBER_ROUTE_" ..
     tostring((game.GameId ~= 0 and game.GameId) or game.PlaceId) ..
-    "_V29.json"
+    "_V30.json"
 
 local localRouteFileAvailable =
     type(writefile) == "function" and
@@ -931,7 +933,7 @@ local localEnv =
     (type(getgenv) == "function" and getgenv()) or _G
 
 local LOCAL_ROUTE_CACHE_KEY =
-    "__CYBER_ROUTE_CACHE_V29_" ..
+    "__CYBER_ROUTE_CACHE_V30_" ..
     tostring((game.GameId ~= 0 and game.GameId) or game.PlaceId)
 
 local function routeToSerializable()
@@ -1082,13 +1084,13 @@ farmInfo.Parent = farmPage
 round(farmInfo, 5)
 addStroke(farmInfo, C.text, 0.68)
 
-makeLabel(farmInfo, "АВТОФАРМ V29 // НОВЫЙ МАРШРУТ",
+makeLabel(farmInfo, "АВТОФАРМ V30 // НОВЫЙ МАРШРУТ",
     UDim2.fromOffset(12, 3), UDim2.new(1, -24, 0, 22),
     17, C.text, Enum.Font.GothamBold)
 
-makeLabel(farmInfo, "ДОМ → 11 ЛОКАЦИЙ → СУНДУК (1195.88) → ДОМ → ПОВТОР",
+makeLabel(farmInfo, "ДОМ → 12 ЛОКАЦИЙ → СУНДУК (1302.39) → ДОМ → ПОВТОР",
     UDim2.fromOffset(12, 25), UDim2.new(1, -24, 0, 18),
-    15, C.muted, Enum.Font.Code)
+    14, C.muted, Enum.Font.Code)
 
 -- ---------------------------------------------------------
 -- TOGGLES
@@ -1717,7 +1719,7 @@ addConnection(resetBtn.MouseButton1Click:Connect(function()
     routePoints = cloneRoute(DEFAULT_ROUTE_POINTS)
     saveRouteLocal(true)
     rebuildRouteRows()
-    setFarmStatus("Маршрут V29 восстановлен // сохранено локально")
+    setFarmStatus("Маршрут V30 восстановлен // сохранено локально")
 end))
 
 addConnection(clearBtn.MouseButton1Click:Connect(function()
@@ -2065,6 +2067,6 @@ end
 
 addConnection(closeBtn.MouseButton1Click:Connect(shutdown))
 
-print("[CYBER PANEL V29 RU] Loaded")
-print("[CYBER PANEL V29 RU] Route: 11 локаций + СУНДУК (5237.72, 4.83, 1195.88)")
-print("[CYBER PANEL V29 RU] All functions OFF")
+print("[CYBER PANEL V30 RU] Loaded")
+print("[CYBER PANEL V30 RU] Route: 12 локаций + СУНДУК (5238.85, 4.83, 1302.39)")
+print("[CYBER PANEL V30 RU] All functions OFF")
