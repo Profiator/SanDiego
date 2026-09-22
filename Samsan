@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V30 RU
+    CYBER PANEL V42 RU
 
     Вкладка "ПЕРСОНАЖ":
       • Ник + координаты + копирование
@@ -8,15 +8,21 @@
       • Fly WASD / Space / Ctrl + скорость
       • Автоклик
       • Бесконечный прыжок
+      • Автосбор наград за игровое время
 
     Вкладка "АВТО":
       • Автоперерождение при 100%
       • Жёсткий Anti-AFK
 
     Вкладка "АВТОФАРМ":
-      • Новый маршрут: 12 локаций + СУНДУК (5238.85, 4.83, 1302.39)
-      • Редактирование координат и времени
-      • Локальное сохранение маршрута в JSON через executor
+      • ТРИ РЕЖИМА:
+        - Маршрут 1: 15 локаций + СУНДУК (5240.07, 4.83, 1589.98)
+        - Маршрут 2: Кубки N2 (1 локация + сундук)
+        - Этажи: ДОМ → ПОРТАЛ → START(2С) → ИГРА TP → TOKENS2X×2 → ЭТАЖ → ТАЙМЕР → СМЕРТЬ → 15С → ПОВТОР
+      • Дом настраивается отдельно для маршрутов 1/2
+      • Для этажей таймер до смерти задаётся в минутах
+      • На арене автоматически активирует tokens2x ×2 и обновляет после окончания
+      • Локальное сохранение маршрутов и таймера в JSON
 
     Все функции при запуске ВЫКЛ.
 ]]
@@ -36,6 +42,7 @@ local Remotes = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes")
 local RequestAttack = Remotes:WaitForChild("RequestAttack")
 local PlayerClick = Remotes:WaitForChild("PlayerClick")
 local RequestRebirth = Remotes:WaitForChild("RequestRebirth")
+local UseBoost = Remotes:FindFirstChild("UseBoost")
 local camera = workspace.CurrentCamera
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -48,10 +55,12 @@ local state = {
     autoClick = false,
     clickInterval = 0.08,
     infiniteJump = false,
+    autoPlaytimeRewards = false,
     autoRebirth = false,
     antiAfk = false,
     routeFarm = false,
     routeLoop = true,
+    activeRoute = 1,   -- 1 = V31 (15 лок + сундук), 2 = Кубки N2
 }
 
 local alive = true
@@ -113,6 +122,7 @@ for _, name in ipairs({
     "CyberPanelV16", "CyberPanelV17", "CyberPanelV18", "CyberPanelV19",
     "CyberPanelV20", "CyberPanelV21", "CyberPanelV22", "CyberPanelV23",
     "CyberPanelV27", "CyberPanelV28", "CyberPanelV29", "CyberPanelV30",
+    "CyberPanelV31", "CyberPanelV32", "CyberPanelV33", "CyberPanelV40", "CyberPanelV41", "CyberPanelV42",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -189,7 +199,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV30"
+gui.Name = "CyberPanelV42"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -213,7 +223,7 @@ topLine.BackgroundColor3 = C.cyan
 topLine.BorderSizePixel = 0
 topLine.Parent = main
 
-makeLabel(main, "BLACK // PANEL V30",
+makeLabel(main, "BLACK // PANEL V42",
     UDim2.fromOffset(12, 7), UDim2.fromOffset(190, 19),
     16, C.text, Enum.Font.GothamBold)
 
@@ -343,13 +353,17 @@ local function makeToggle(row, initial, callback)
             b.Text = "ВЫКЛ"
         end
     end
+    local function setVisual(value)
+        current = value == true
+        redraw()
+    end
     addConnection(b.MouseButton1Click:Connect(function()
         current = not current
         redraw()
         callback(current)
     end))
     redraw()
-    return b
+    return b, setVisual
 end
 
 local function makeCompactSlider(parent, y, titleText, minValue, maxValue, initialValue, callback)
@@ -503,12 +517,17 @@ makeToggle(clickRow, false, function(v) state.autoClick = v end)
 local jumpRow = makeRow(charPage, 252, "БЕСКОНЕЧНЫЙ ПРЫЖОК")
 makeToggle(jumpRow, false, function(v) state.infiniteJump = v end)
 
+local playtimeRewardRow = makeRow(charPage, 291, "АВТО НАГРАДЫ ЗА ВРЕМЯ")
+makeToggle(playtimeRewardRow, false, function(v)
+    state.autoPlaytimeRewards = v
+end)
+
 -- =========================================================
 -- TELEPORT
 -- =========================================================
 
 local tpBox = Instance.new("Frame")
-tpBox.Position = UDim2.fromOffset(0, 291)
+tpBox.Position = UDim2.fromOffset(0, 330)
 tpBox.Size = UDim2.new(1, 0, 0, 64)
 tpBox.BackgroundColor3 = C.panel
 tpBox.BackgroundTransparency = 0.08
@@ -582,6 +601,139 @@ addConnection(tpInput.FocusLost:Connect(function(enterPressed)
     if enterPressed then teleportFromInput() end
 end))
 
+
+-- =========================================================
+-- AUTO PLAYTIME REWARDS V42
+-- =========================================================
+-- Лог подтвердил:
+--   PlaytimeRewards.Container.Main.ScrollingFrame
+--   карточки: ImageButton "1".."12"
+--   состояние: Container.Claim.TextLabel = CLAIM / CLAIMED
+--   таймер: Container.Timer
+-- Ручной успешный клик был именно по самой карточке ImageButton.
+-- =========================================================
+
+local playtimeRewardAttempts = {}
+
+local function findPlaytimeScrolling()
+    local sg = playerGui:FindFirstChild("ScreenGui")
+    local menus = sg and sg:FindFirstChild("Menus")
+    local playtime = menus and menus:FindFirstChild("PlaytimeRewards")
+    local container = playtime and playtime:FindFirstChild("Container")
+    local mainFrame = container and container:FindFirstChild("Main")
+    local scrolling = mainFrame and mainFrame:FindFirstChild("ScrollingFrame")
+
+    if scrolling and scrolling:IsA("ScrollingFrame") then
+        return scrolling
+    end
+
+    return nil
+end
+
+local function readPlaytimeCard(card)
+    if not card or not card.Parent then
+        return nil, nil
+    end
+
+    local container = card:FindFirstChild("Container")
+    if not container then
+        return nil, nil
+    end
+
+    local timer = container:FindFirstChild("Timer")
+    local claim = container:FindFirstChild("Claim")
+    local claimLabel = claim and claim:FindFirstChild("TextLabel")
+
+    local timerText = timer and tostring(timer.Text or "") or ""
+    local claimText = claimLabel and string.upper(tostring(claimLabel.Text or "")) or ""
+
+    local mm, ss = string.match(timerText, "^%s*(%d+):(%d%d)%s*$")
+    local secondsLeft = nil
+
+    if mm and ss then
+        secondsLeft = (tonumber(mm) or 0) * 60 + (tonumber(ss) or 0)
+    end
+
+    return claimText, secondsLeft
+end
+
+local function firePlaytimeCard(card)
+    if not card or not card.Parent then
+        return false
+    end
+
+    if type(firesignal) ~= "function" then
+        return false
+    end
+
+    -- Используем только один сигнал за попытку.
+    local ok = pcall(function()
+        firesignal(card.MouseButton1Click)
+    end)
+
+    return ok
+end
+
+local function scanPlaytimeRewards()
+    local scrolling = findPlaytimeScrolling()
+    if not scrolling then
+        return
+    end
+
+    for i = 1, 12 do
+        if not state.autoPlaytimeRewards or not alive then
+            return
+        end
+
+        local card = scrolling:FindFirstChild(tostring(i))
+
+        if card and card:IsA("GuiButton") then
+            local claimText, secondsLeft = readPlaytimeCard(card)
+
+            -- В твоём логе карточка успешно забиралась при 00:01 + CLAIM.
+            if claimText == "CLAIM"
+                and secondsLeft ~= nil
+                and secondsLeft <= 1 then
+
+                local key = tostring(i)
+                local now = os.clock()
+                local last = playtimeRewardAttempts[key] or 0
+
+                if now - last >= 0.75 then
+                    playtimeRewardAttempts[key] = now
+
+                    local sent = firePlaytimeCard(card)
+
+                    if sent then
+                        print(
+                            "[AUTO PLAYTIME] CLAIM #" ..
+                            key ..
+                            " // timer=" ..
+                            tostring(secondsLeft)
+                        )
+                    end
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while alive do
+        if state.autoPlaytimeRewards then
+            local ok, err = pcall(scanPlaytimeRewards)
+
+            if not ok then
+                warn("[AUTO PLAYTIME ERROR] " .. tostring(err))
+            end
+
+            task.wait(0.25)
+        else
+            task.wait(0.50)
+        end
+    end
+end)
+
 -- =========================================================
 -- CLICK / ATTACK ENGINE
 -- =========================================================
@@ -629,7 +781,7 @@ task.spawn(function()
         if state.autoClick then
             local ok = performServerAttack()
             if not ok then performLocalClickFallback() end
-            task.wait(0.05)
+            task.wait(math.max(0.01, tonumber(state.clickInterval) or 0.05))
         else
             task.wait(0.06)
         end
@@ -864,41 +1016,60 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- AUTOFARM // МАРШРУТ V30
+-- AUTOFARM // 2 МАРШРУТА + ЭТАЖИ V35
 -- =========================================================
+-- МАРШРУТ 1 (старый V31):
 -- ДОМ: 5251.17, 5.83, 93.96
--- 1)  5249.24, 4.46, 161.55   — 2.0 сек
--- 2)  5251.74, 4.46, 246.99   — 2.0 сек
--- 3)  5250.60, 4.46, 338.45   — 3.0 сек
--- 4)  5250.56, 4.10, 453.07   — 3.0 сек
--- 5)  5248.76, 4.10, 540.91   — 3.0 сек
--- 6)  5251.60, 4.10, 637.94   — 3.0 сек
--- 7)  5250.70, 4.03, 744.80   — 3.5 сек
--- 8)  5249.93, 4.03, 832.44   — 3.0 сек
--- 9)  5252.60, 4.03, 924.12   — 4.0 сек
--- 10) 5251.56, 4.03, 1035.15  — 4.0 сек
--- 11) 5249.67, 4.03, 1119.96  — 5.0 сек
--- 12) 5249.65, 4.03, 1213.57  — 0.5 сек (быстрый пропуск)
--- 13) СУНДУК: 5238.85, 4.83, 1302.39 — 2.0 сек
--- → дом → по кругу.
+-- 1)  5249.24, 4.46, 161.55   — 1.5
+-- 2)  5251.74, 4.46, 246.99   — 1.5
+-- 3)  5250.60, 4.46, 338.45   — 1.5
+-- 4)  5250.56, 4.10, 453.07   — 1.5
+-- 5)  5248.76, 4.10, 540.91   — 1.5
+-- 6)  5251.60, 4.10, 637.94   — 1.5
+-- 7)  5250.70, 4.03, 744.80   — 1.5
+-- 8)  5249.93, 4.03, 832.44   — 1.5
+-- 9)  5252.60, 4.03, 924.12   — 1.5
+-- 10) 5251.56, 4.03, 1035.15  — 1.5
+-- 11) 5249.67, 4.03, 1119.96  — 1.5
+-- 12) 5251.97, 4.03, 1217.51  — 1.5
+-- 13) 5253.15, 4.03, 1332.41  — 3.0
+-- 14) 5249.97, 4.03, 1417.89  — 4.0
+-- 15) 5247.88, 4.03, 1511.42  — 0.5
+-- 16) СУНДУК: 5240.07, 4.83, 1589.98 — 1.0
+--
+-- МАРШРУТ 2 (Кубки N2):
+-- ДОМ: 5251.17, 5.83, 93.96 (тот же)
+-- 1)  5251.92, 4.46, 159.43   — 0.5
+-- 2)  СУНДУК: 5238.48, 4.39, 226.39 — 0.5
 
-local DEFAULT_ROUTE_START = Vector3.new(5251.17, 5.83, 93.96)
-local routeStart = DEFAULT_ROUTE_START
+local DEFAULT_HOME = Vector3.new(5251.17, 5.83, 93.96)
 
-local DEFAULT_ROUTE_POINTS = {
-    { name = "Локация 1",  pos = Vector3.new(5249.24, 4.46, 161.55),  wait = 2.0 },
-    { name = "Локация 2",  pos = Vector3.new(5251.74, 4.46, 246.99),  wait = 2.0 },
-    { name = "Локация 3",  pos = Vector3.new(5250.60, 4.46, 338.45),  wait = 3.0 },
-    { name = "Локация 4",  pos = Vector3.new(5250.56, 4.10, 453.07),  wait = 3.0 },
-    { name = "Локация 5",  pos = Vector3.new(5248.76, 4.10, 540.91),  wait = 3.0 },
-    { name = "Локация 6",  pos = Vector3.new(5251.60, 4.10, 637.94),  wait = 3.0 },
-    { name = "Локация 7",  pos = Vector3.new(5250.70, 4.03, 744.80),  wait = 3.5 },
-    { name = "Локация 8",  pos = Vector3.new(5249.93, 4.03, 832.44),  wait = 3.0 },
-    { name = "Локация 9",  pos = Vector3.new(5252.60, 4.03, 924.12),  wait = 4.0 },
-    { name = "Локация 10", pos = Vector3.new(5251.56, 4.03, 1035.15), wait = 4.0 },
-    { name = "Локация 11", pos = Vector3.new(5249.67, 4.03, 1119.96), wait = 5.0 },
-    { name = "Локация 12", pos = Vector3.new(5249.65, 4.03, 1213.57), wait = 0.5 },
-    { name = "СУНДУК",     pos = Vector3.new(5238.85, 4.83, 1302.39), wait = 2.0, isChest = true },
+-- === МАРШРУТ 1 ===
+local ROUTE1_START = DEFAULT_HOME
+local ROUTE1_POINTS = {
+    { name = "Локация 1",  pos = Vector3.new(5249.24, 4.46, 161.55),  wait = 1.5 },
+    { name = "Локация 2",  pos = Vector3.new(5251.74, 4.46, 246.99),  wait = 1.5 },
+    { name = "Локация 3",  pos = Vector3.new(5250.60, 4.46, 338.45),  wait = 1.5 },
+    { name = "Локация 4",  pos = Vector3.new(5250.56, 4.10, 453.07),  wait = 1.5 },
+    { name = "Локация 5",  pos = Vector3.new(5248.76, 4.10, 540.91),  wait = 1.5 },
+    { name = "Локация 6",  pos = Vector3.new(5251.60, 4.10, 637.94),  wait = 1.5 },
+    { name = "Локация 7",  pos = Vector3.new(5250.70, 4.03, 744.80),  wait = 1.5 },
+    { name = "Локация 8",  pos = Vector3.new(5249.93, 4.03, 832.44),  wait = 1.5 },
+    { name = "Локация 9",  pos = Vector3.new(5252.60, 4.03, 924.12),  wait = 1.5 },
+    { name = "Локация 10", pos = Vector3.new(5251.56, 4.03, 1035.15), wait = 1.5 },
+    { name = "Локация 11", pos = Vector3.new(5249.67, 4.03, 1119.96), wait = 1.5 },
+    { name = "Локация 12", pos = Vector3.new(5251.97, 4.03, 1217.51), wait = 1.5 },
+    { name = "Локация 13", pos = Vector3.new(5253.15, 4.03, 1332.41), wait = 3.0 },
+    { name = "Локация 14", pos = Vector3.new(5249.97, 4.03, 1417.89), wait = 4.0 },
+    { name = "Локация 15", pos = Vector3.new(5247.88, 4.03, 1511.42), wait = 0.5 },
+    { name = "СУНДУК",     pos = Vector3.new(5240.07, 4.83, 1589.98), wait = 1.0, isChest = true },
+}
+
+-- === МАРШРУТ 2 (Кубки N2) ===
+local ROUTE2_START = DEFAULT_HOME
+local ROUTE2_POINTS = {
+    { name = "Кубок 1",  pos = Vector3.new(5251.92, 4.46, 159.43), wait = 0.5 },
+    { name = "СУНДУК",   pos = Vector3.new(5238.48, 4.39, 226.39), wait = 0.5, isChest = true },
 }
 
 local function cloneRoute(source)
@@ -914,16 +1085,42 @@ local function cloneRoute(source)
     return result
 end
 
-local routePoints = cloneRoute(DEFAULT_ROUTE_POINTS)
+-- Активные переменные (переключаются тумблером)
+local routeStart = ROUTE1_START
+local routePoints = cloneRoute(ROUTE1_POINTS)
+
+-- Хранилища для обоих маршрутов
+local routeData = {
+    [1] = {
+        start = ROUTE1_START,
+        points = cloneRoute(ROUTE1_POINTS),
+        title = "Маршрут 1 (15 лок + сундук)",
+    },
+    [2] = {
+        start = ROUTE2_START,
+        points = cloneRoute(ROUTE2_POINTS),
+        title = "Маршрут 2 (Кубки N2)",
+    },
+}
 
 -- =========================================================
--- LOCAL ROUTE STORAGE (файл V30 — старые V28/V29 не подтянутся)
+-- ЭТАЖИ // FIXED POINTS V42
+-- =========================================================
+
+local FLOOR_HOME = Vector3.new(5251.50, 4.45, 94.00)
+local FLOOR_PORTAL = Vector3.new(5204.86, 4.00, 31.64)
+local FLOOR_HOLD = Vector3.new(5663.88, 102.26, -1305.00)
+local floorDurationMinutes = 10
+local farmMode = "ROUTE" -- ROUTE / FLOORS
+
+-- =========================================================
+-- LOCAL ROUTE STORAGE (V32-compatible: не теряем старые маршруты)
 -- =========================================================
 
 local LOCAL_ROUTE_FILE =
     "CYBER_ROUTE_" ..
     tostring((game.GameId ~= 0 and game.GameId) or game.PlaceId) ..
-    "_V30.json"
+    "_V32.json"
 
 local localRouteFileAvailable =
     type(writefile) == "function" and
@@ -933,26 +1130,29 @@ local localEnv =
     (type(getgenv) == "function" and getgenv()) or _G
 
 local LOCAL_ROUTE_CACHE_KEY =
-    "__CYBER_ROUTE_CACHE_V30_" ..
+    "__CYBER_ROUTE_CACHE_V32_" ..
     tostring((game.GameId ~= 0 and game.GameId) or game.PlaceId)
 
 local function routeToSerializable()
-    local points = {}
-    for i, item in ipairs(routePoints) do
-        points[i] = {
-            name = tostring(item.name or ("Локация " .. tostring(i))),
-            x = tonumber(item.pos and item.pos.X) or 0,
-            y = tonumber(item.pos and item.pos.Y) or 0,
-            z = tonumber(item.pos and item.pos.Z) or 0,
-            wait = tonumber(item.wait) or 2,
-            isChest = item.isChest == true,
+    local data = { version = 2, routes = {}, floorMinutes = floorDurationMinutes }
+    for idx, r in pairs(routeData) do
+        local points = {}
+        for i, item in ipairs(r.points) do
+            points[i] = {
+                name = tostring(item.name or ("Локация " .. tostring(i))),
+                x = tonumber(item.pos and item.pos.X) or 0,
+                y = tonumber(item.pos and item.pos.Y) or 0,
+                z = tonumber(item.pos and item.pos.Z) or 0,
+                wait = tonumber(item.wait) or 2,
+                isChest = item.isChest == true,
+            }
+        end
+        data.routes[idx] = {
+            start = { x = r.start.X, y = r.start.Y, z = r.start.Z },
+            points = points,
         }
     end
-    return {
-        version = 1,
-        home = { x = routeStart.X, y = routeStart.Y, z = routeStart.Z },
-        points = points,
-    }
+    return data
 end
 
 local function saveRouteLocal(silent)
@@ -960,7 +1160,7 @@ local function saveRouteLocal(silent)
     localEnv[LOCAL_ROUTE_CACHE_KEY] = snapshot
 
     if not localRouteFileAvailable then
-        if not silent then setFarmStatus("Маршрут сохранён локально в памяти Xeno") end
+        if not silent then setFarmStatus("Маршруты сохранены в памяти Xeno") end
         return true
     end
 
@@ -969,7 +1169,7 @@ local function saveRouteLocal(silent)
     end)
 
     if not okEncode or type(encoded) ~= "string" then
-        if not silent then setFarmStatus("Маршрут в памяти // ошибка JSON-файла") end
+        if not silent then setFarmStatus("Маршруты в памяти // ошибка JSON") end
         return true
     end
 
@@ -979,7 +1179,7 @@ local function saveRouteLocal(silent)
 
     if not okWrite then
         if not silent then
-            setFarmStatus("Маршрут в памяти // файл не записан: " .. tostring(err))
+            setFarmStatus("Маршруты в памяти // файл не записан: " .. tostring(err))
         end
         return true
     end
@@ -1010,34 +1210,50 @@ local function loadRouteLocal()
     end
 
     if type(data) ~= "table" then return false end
+    if type(data.routes) ~= "table" then return false end
 
-    if type(data.home) == "table" then
-        local hx = tonumber(data.home.x)
-        local hy = tonumber(data.home.y)
-        local hz = tonumber(data.home.z)
-        if hx and hy and hz then routeStart = Vector3.new(hx, hy, hz) end
+    local restoredFloorMinutes = tonumber(data.floorMinutes)
+    if restoredFloorMinutes then
+        floorDurationMinutes = math.clamp(restoredFloorMinutes, 0.05, 1440)
     end
 
-    if type(data.points) == "table" then
-        local restored = {}
-        for i, item in ipairs(data.points) do
-            if type(item) == "table" then
-                local x = tonumber(item.x)
-                local y = tonumber(item.y)
-                local z = tonumber(item.z)
-                local seconds = tonumber(item.wait)
-                if x and y and z then
-                    restored[#restored + 1] = {
-                        name = tostring(item.name or ("Локация " .. tostring(i))),
-                        pos = Vector3.new(x, y, z),
-                        wait = math.clamp(seconds or 2, 0.05, 3600),
-                        isChest = item.isChest == true,
-                    }
+    for idx = 1, 2 do
+        local route = data.routes[idx]
+        if type(route) == "table" then
+            if type(route.start) == "table" then
+                local hx = tonumber(route.start.x)
+                local hy = tonumber(route.start.y)
+                local hz = tonumber(route.start.z)
+                if hx and hy and hz then
+                    routeData[idx].start = Vector3.new(hx, hy, hz)
                 end
             end
+            if type(route.points) == "table" then
+                local restored = {}
+                for i, item in ipairs(route.points) do
+                    if type(item) == "table" then
+                        local x = tonumber(item.x)
+                        local y = tonumber(item.y)
+                        local z = tonumber(item.z)
+                        local seconds = tonumber(item.wait)
+                        if x and y and z then
+                            restored[#restored + 1] = {
+                                name = tostring(item.name or ("Локация " .. tostring(i))),
+                                pos = Vector3.new(x, y, z),
+                                wait = math.clamp(seconds or 2, 0.05, 3600),
+                                isChest = item.isChest == true,
+                            }
+                        end
+                    end
+                end
+                routeData[idx].points = restored
+            end
         end
-        routePoints = restored
     end
+
+    routeStart = routeData[state.activeRoute].start
+    routePoints = routeData[state.activeRoute].points
+
     return true
 end
 
@@ -1076,7 +1292,7 @@ end
 
 local farmInfo = Instance.new("Frame")
 farmInfo.Position = UDim2.fromOffset(0, 0)
-farmInfo.Size = UDim2.new(1, 0, 0, 50)
+farmInfo.Size = UDim2.new(1, 0, 0, 44)
 farmInfo.BackgroundColor3 = C.panel
 farmInfo.BackgroundTransparency = 0
 farmInfo.BorderSizePixel = 0
@@ -1084,20 +1300,63 @@ farmInfo.Parent = farmPage
 round(farmInfo, 5)
 addStroke(farmInfo, C.text, 0.68)
 
-makeLabel(farmInfo, "АВТОФАРМ V30 // НОВЫЙ МАРШРУТ",
-    UDim2.fromOffset(12, 3), UDim2.new(1, -24, 0, 22),
-    17, C.text, Enum.Font.GothamBold)
+makeLabel(farmInfo, "АВТОФАРМ V42 // 2 МАРШРУТА + ЭТАЖИ",
+    UDim2.fromOffset(12, 3), UDim2.new(1, -24, 0, 20),
+    16, C.text, Enum.Font.GothamBold)
 
-makeLabel(farmInfo, "ДОМ → 12 ЛОКАЦИЙ → СУНДУК (1302.39) → ДОМ → ПОВТОР",
-    UDim2.fromOffset(12, 25), UDim2.new(1, -24, 0, 18),
-    14, C.muted, Enum.Font.Code)
+makeLabel(farmInfo, "МАРШРУТЫ // КУБКИ // БЕСКОНЕЧНЫЕ ЭТАЖИ",
+    UDim2.fromOffset(12, 23), UDim2.new(1, -24, 0, 16),
+    13, C.muted, Enum.Font.Code)
+
+-- ---------------------------------------------------------
+-- ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ
+-- ---------------------------------------------------------
+
+local switchCard = Instance.new("Frame")
+switchCard.Position = UDim2.fromOffset(0, 50)
+switchCard.Size = UDim2.new(1, 0, 0, 42)
+switchCard.BackgroundColor3 = C.panel
+switchCard.BorderSizePixel = 0
+switchCard.Parent = farmPage
+round(switchCard, 5)
+addStroke(switchCard, C.cyanDim, 0.4)
+
+local routeBtn1 = makeButton(switchCard, "▶ Маршрут 1",
+    UDim2.fromOffset(6, 5), UDim2.new(0.3333, -8, 1, -10))
+routeBtn1.TextSize = 11
+
+local routeBtn2 = makeButton(switchCard, "Кубки N2",
+    UDim2.new(0.3333, 2, 0, 5), UDim2.new(0.3333, -7, 1, -10))
+routeBtn2.TextSize = 11
+
+local routeBtn3 = makeButton(switchCard, "Этажи",
+    UDim2.new(0.6666, 1, 0, 5), UDim2.new(0.3334, -7, 1, -10))
+routeBtn3.TextSize = 11
+
+local refreshFarmModeUI = function() end
+
+local function refreshRouteButtons()
+    local a1 = farmMode == "ROUTE" and state.activeRoute == 1
+    local a2 = farmMode == "ROUTE" and state.activeRoute == 2
+    local a3 = farmMode == "FLOORS"
+    routeBtn1.BackgroundColor3 = a1 and C.cyan or C.panel2
+    routeBtn1.TextColor3 = a1 and C.bg or C.text
+    routeBtn1.Text = (a1 and "▶ " or "") .. "Маршрут 1"
+    routeBtn2.BackgroundColor3 = a2 and C.cyan or C.panel2
+    routeBtn2.TextColor3 = a2 and C.bg or C.text
+    routeBtn2.Text = (a2 and "▶ " or "") .. "Кубки N2"
+    routeBtn3.BackgroundColor3 = a3 and C.cyan or C.panel2
+    routeBtn3.TextColor3 = a3 and C.bg or C.text
+    routeBtn3.Text = (a3 and "▶ " or "") .. "Этажи"
+end
+refreshRouteButtons()
 
 -- ---------------------------------------------------------
 -- TOGGLES
 -- ---------------------------------------------------------
 
 local farmToggleCard = Instance.new("Frame")
-farmToggleCard.Position = UDim2.fromOffset(0, 57)
+farmToggleCard.Position = UDim2.fromOffset(0, 98)
 farmToggleCard.Size = UDim2.new(0.5, -4, 0, 40)
 farmToggleCard.BackgroundColor3 = C.panel
 farmToggleCard.BorderSizePixel = 0
@@ -1109,14 +1368,21 @@ makeLabel(farmToggleCard, "АВТОФАРМ",
     UDim2.fromOffset(10, 0), UDim2.new(1, -72, 1, 0),
     15, C.text, Enum.Font.GothamBold)
 
-makeToggle(farmToggleCard, false, function(v)
+local farmToggleButton, setFarmToggleVisual = makeToggle(farmToggleCard, false, function(v)
     state.routeFarm = v
-    if v then setFarmStatus("ЗАПУСК // маршрут активен")
-    else setFarmStatus("ОСТАНОВЛЕНО") end
+    if v then
+        if farmMode == "FLOORS" then
+            setFarmStatus("ЭТАЖИ // запуск цикла")
+        else
+            setFarmStatus("ЗАПУСК // " .. routeData[state.activeRoute].title)
+        end
+    else
+        setFarmStatus("ОСТАНОВЛЕНО")
+    end
 end)
 
 local loopToggleCard = Instance.new("Frame")
-loopToggleCard.Position = UDim2.new(0.5, 4, 0, 57)
+loopToggleCard.Position = UDim2.new(0.5, 4, 0, 98)
 loopToggleCard.Size = UDim2.new(0.5, -4, 0, 40)
 loopToggleCard.BackgroundColor3 = C.panel
 loopToggleCard.BorderSizePixel = 0
@@ -1138,7 +1404,7 @@ end)
 -- ---------------------------------------------------------
 
 local homeCard = Instance.new("Frame")
-homeCard.Position = UDim2.fromOffset(0, 104)
+homeCard.Position = UDim2.fromOffset(0, 144)
 homeCard.Size = UDim2.new(1, 0, 0, 44)
 homeCard.BackgroundColor3 = C.panel
 homeCard.BorderSizePixel = 0
@@ -1179,6 +1445,7 @@ local function syncStartFromBox()
     local parsed = parseXYZ(startBox.Text)
     if parsed then
         routeStart = parsed
+        routeData[state.activeRoute].start = parsed
         startBox.Text = formatXYZ(routeStart)
         saveRouteLocal(true)
         return true
@@ -1193,6 +1460,7 @@ addConnection(homeCurrentBtn.MouseButton1Click:Connect(function()
     local root = getRoot()
     if not root then setFarmStatus("Персонаж не найден") return end
     routeStart = root.Position
+    routeData[state.activeRoute].start = routeStart
     startBox.Text = formatXYZ(routeStart)
     saveRouteLocal(true)
     setFarmStatus("Дом = текущая позиция // сохранено локально")
@@ -1209,8 +1477,8 @@ end))
 -- ---------------------------------------------------------
 
 local addCard = Instance.new("Frame")
-addCard.Position = UDim2.fromOffset(0, 155)
-addCard.Size = UDim2.new(1, 0, 0, 94)
+addCard.Position = UDim2.fromOffset(0, 194)
+addCard.Size = UDim2.new(1, 0, 0, 90)
 addCard.BackgroundColor3 = C.panel
 addCard.BorderSizePixel = 0
 addCard.Parent = farmPage
@@ -1219,12 +1487,12 @@ round(addCard, 5)
 addStroke(addCard, C.cyanDim, 0.38)
 
 makeLabel(addCard, "ДОБАВИТЬ ЛОКАЦИЮ",
-    UDim2.fromOffset(10, 2), UDim2.new(1, -20, 0, 18),
-    17, C.muted, Enum.Font.GothamBold)
+    UDim2.fromOffset(10, 2), UDim2.new(1, -20, 0, 16),
+    15, C.muted, Enum.Font.GothamBold)
 
 local addNameBox = Instance.new("TextBox")
-addNameBox.Position = UDim2.fromOffset(8, 26)
-addNameBox.Size = UDim2.fromOffset(125, 29)
+addNameBox.Position = UDim2.fromOffset(8, 24)
+addNameBox.Size = UDim2.fromOffset(125, 27)
 addNameBox.BackgroundColor3 = C.panel2
 addNameBox.BorderSizePixel = 0
 addNameBox.ClearTextOnFocus = false
@@ -1232,15 +1500,15 @@ addNameBox.Text = ""
 addNameBox.PlaceholderText = "Название"
 addNameBox.TextColor3 = C.text
 addNameBox.PlaceholderColor3 = C.muted
-addNameBox.TextSize = 17
+addNameBox.TextSize = 15
 addNameBox.Font = Enum.Font.GothamMedium
 addNameBox.Parent = addCard
 addNameBox.ZIndex = 25
 round(addNameBox, 4)
 
 local addCoordBox = Instance.new("TextBox")
-addCoordBox.Position = UDim2.fromOffset(139, 26)
-addCoordBox.Size = UDim2.new(1, -335, 0, 29)
+addCoordBox.Position = UDim2.fromOffset(139, 24)
+addCoordBox.Size = UDim2.new(1, -335, 0, 27)
 addCoordBox.BackgroundColor3 = C.panel2
 addCoordBox.BorderSizePixel = 0
 addCoordBox.ClearTextOnFocus = false
@@ -1248,7 +1516,7 @@ addCoordBox.Text = ""
 addCoordBox.PlaceholderText = "Вставь X, Y, Z"
 addCoordBox.TextColor3 = C.text
 addCoordBox.PlaceholderColor3 = C.muted
-addCoordBox.TextSize = 17
+addCoordBox.TextSize = 15
 addCoordBox.Font = Enum.Font.Code
 addCoordBox.TextXAlignment = Enum.TextXAlignment.Left
 addCoordBox.Parent = addCard
@@ -1256,29 +1524,29 @@ addCoordBox.ZIndex = 25
 round(addCoordBox, 4)
 
 local addWaitBox = Instance.new("TextBox")
-addWaitBox.Position = UDim2.new(1, -190, 0, 26)
-addWaitBox.Size = UDim2.fromOffset(50, 29)
+addWaitBox.Position = UDim2.new(1, -190, 0, 24)
+addWaitBox.Size = UDim2.fromOffset(50, 27)
 addWaitBox.BackgroundColor3 = C.panel2
 addWaitBox.BorderSizePixel = 0
 addWaitBox.ClearTextOnFocus = false
 addWaitBox.Text = "2.0"
 addWaitBox.PlaceholderText = "сек"
 addWaitBox.TextColor3 = C.text
-addWaitBox.TextSize = 17
+addWaitBox.TextSize = 15
 addWaitBox.Font = Enum.Font.Code
 addWaitBox.Parent = addCard
 addWaitBox.ZIndex = 25
 round(addWaitBox, 4)
 
 local fillCurrentBtn = makeButton(addCard, "POS",
-    UDim2.new(1, -134, 0, 26), UDim2.fromOffset(58, 29))
-fillCurrentBtn.TextSize = 17
+    UDim2.new(1, -134, 0, 24), UDim2.fromOffset(58, 27))
+fillCurrentBtn.TextSize = 15
 fillCurrentBtn.ZIndex = 25
 fillCurrentBtn.Active = true
 
-local addPointBtn = makeButton(addCard, "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ",
-    UDim2.fromOffset(8, 60), UDim2.new(1, -16, 0, 27))
-addPointBtn.TextSize = 15
+local addPointBtn = makeButton(addCard, "+ ДОБАВИТЬ ЛОКАЦИЮ В АКТИВНЫЙ МАРШРУТ",
+    UDim2.fromOffset(8, 56), UDim2.new(1, -16, 0, 26))
+addPointBtn.TextSize = 13
 addPointBtn.ZIndex = 50
 addPointBtn.Active = true
 addPointBtn.Selectable = true
@@ -1298,14 +1566,14 @@ end))
 -- ROUTE LIST
 -- ---------------------------------------------------------
 
-makeLabel(farmPage,
+local routeOrderLabel = makeLabel(farmPage,
     "ПОРЯДОК // ↑ ↓ порядок // POS = текущие // ВРЕМЯ = СЕКУНДЫ",
-    UDim2.fromOffset(4, 255), UDim2.new(1, -8, 0, 18),
-    17, C.muted, Enum.Font.Code)
+    UDim2.fromOffset(4, 288), UDim2.new(1, -8, 0, 16),
+    13, C.muted, Enum.Font.Code)
 
 local routeScroll = Instance.new("ScrollingFrame")
-routeScroll.Position = UDim2.fromOffset(0, 277)
-routeScroll.Size = UDim2.new(1, 0, 0, 236)
+routeScroll.Position = UDim2.fromOffset(0, 306)
+routeScroll.Size = UDim2.new(1, 0, 0, 210)
 routeScroll.BackgroundColor3 = C.panel
 routeScroll.BorderSizePixel = 0
 routeScroll.ScrollBarThickness = 5
@@ -1375,7 +1643,7 @@ end
 local function makeRouteRow(index, data)
     local row = Instance.new("Frame")
     row.Name = "RouteRow_" .. tostring(index)
-    row.Size = UDim2.new(1, 0, 0, 52)
+    row.Size = UDim2.new(1, 0, 0, 48)
     row.BackgroundColor3 = data.isChest and Color3.fromRGB(28, 28, 28) or C.panel2
     row.BorderSizePixel = 0
     row.LayoutOrder = index
@@ -1385,27 +1653,27 @@ local function makeRouteRow(index, data)
         data.isChest and 0.40 or 0.70)
 
     makeLabel(row, "#" .. tostring(index),
-        UDim2.fromOffset(7, 0), UDim2.fromOffset(28, 52),
-        17, C.muted, Enum.Font.Code)
+        UDim2.fromOffset(6, 0), UDim2.fromOffset(26, 48),
+        15, C.muted, Enum.Font.Code)
 
     local nameBox = Instance.new("TextBox")
-    nameBox.Position = UDim2.fromOffset(36, 8)
-    nameBox.Size = UDim2.fromOffset(95, 30)
+    nameBox.Position = UDim2.fromOffset(32, 8)
+    nameBox.Size = UDim2.fromOffset(90, 26)
     nameBox.BackgroundColor3 = C.bg
     nameBox.BackgroundTransparency = 0
     nameBox.BorderSizePixel = 0
     nameBox.ClearTextOnFocus = false
     nameBox.Text = tostring(data.name or ("Локация " .. index))
     nameBox.TextColor3 = C.text
-    nameBox.TextSize = 17
+    nameBox.TextSize = 15
     nameBox.Font = Enum.Font.GothamMedium
     nameBox.Parent = row
     nameBox.TextEditable = not data.isChest
     round(nameBox, 4)
 
     local coordBox = Instance.new("TextBox")
-    coordBox.Position = UDim2.fromOffset(137, 8)
-    coordBox.Size = UDim2.new(1, -365, 0, 30)
+    coordBox.Position = UDim2.fromOffset(126, 8)
+    coordBox.Size = UDim2.new(1, -350, 0, 26)
     coordBox.BackgroundColor3 = C.bg
     coordBox.BorderSizePixel = 0
     coordBox.ClearTextOnFocus = false
@@ -1413,41 +1681,41 @@ local function makeRouteRow(index, data)
     coordBox.PlaceholderText = "X, Y, Z"
     coordBox.TextColor3 = C.text
     coordBox.PlaceholderColor3 = C.muted
-    coordBox.TextSize = 17
+    coordBox.TextSize = 15
     coordBox.Font = Enum.Font.Code
     coordBox.TextXAlignment = Enum.TextXAlignment.Left
     coordBox.Parent = row
     round(coordBox, 4)
 
     local waitBox = Instance.new("TextBox")
-    waitBox.Position = UDim2.new(1, -222, 0, 8)
-    waitBox.Size = UDim2.fromOffset(48, 30)
+    waitBox.Position = UDim2.new(1, -220, 0, 8)
+    waitBox.Size = UDim2.fromOffset(44, 26)
     waitBox.BackgroundColor3 = C.bg
     waitBox.BorderSizePixel = 0
     waitBox.ClearTextOnFocus = false
     waitBox.Text = string.format("%.1f", tonumber(data.wait) or 2)
     waitBox.PlaceholderText = "сек"
     waitBox.TextColor3 = C.text
-    waitBox.TextSize = 17
+    waitBox.TextSize = 15
     waitBox.Font = Enum.Font.Code
     waitBox.Parent = row
     round(waitBox, 4)
 
     local posBtn = makeButton(row, "POS",
-        UDim2.new(1, -168, 0, 8), UDim2.fromOffset(38, 30))
-    posBtn.TextSize = 16
+        UDim2.new(1, -170, 0, 8), UDim2.fromOffset(36, 26))
+    posBtn.TextSize = 14
 
     local upBtn = makeButton(row, "↑",
-        UDim2.new(1, -124, 0, 8), UDim2.fromOffset(28, 30))
-    upBtn.TextSize = 17
+        UDim2.new(1, -128, 0, 8), UDim2.fromOffset(26, 26))
+    upBtn.TextSize = 15
 
     local downBtn = makeButton(row, "↓",
-        UDim2.new(1, -92, 0, 8), UDim2.fromOffset(28, 30))
-    downBtn.TextSize = 17
+        UDim2.new(1, -98, 0, 8), UDim2.fromOffset(26, 26))
+    downBtn.TextSize = 15
 
     local deleteBtn = makeButton(row, "×",
-        UDim2.new(1, -60, 0, 8), UDim2.fromOffset(28, 30))
-    deleteBtn.TextSize = 16
+        UDim2.new(1, -68, 0, 8), UDim2.fromOffset(26, 26))
+    deleteBtn.TextSize = 14
 
     addConnection(nameBox.FocusLost:Connect(function()
         if data.isChest then nameBox.Text = "СУНДУК"; return end
@@ -1555,6 +1823,47 @@ end
 addConnection(routeListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas))
 rebuildRouteRows()
 
+-- Переключение режимов
+local function activateRouteMode(routeNumber)
+    if state.routeFarm then
+        setFarmStatus("Сначала останови автофарм")
+        return
+    end
+    if farmMode == "ROUTE" then
+        routeData[state.activeRoute].start = routeStart
+        routeData[state.activeRoute].points = routePoints
+    end
+    farmMode = "ROUTE"
+    state.activeRoute = routeNumber
+    routeStart = routeData[routeNumber].start
+    routePoints = routeData[routeNumber].points
+    startBox.Text = formatXYZ(routeStart)
+    rebuildRouteRows()
+    refreshRouteButtons()
+    refreshFarmModeUI()
+    saveRouteLocal(true)
+    setFarmStatus("Переключено на " .. routeData[routeNumber].title)
+end
+
+addConnection(routeBtn1.MouseButton1Click:Connect(function() activateRouteMode(1) end))
+addConnection(routeBtn2.MouseButton1Click:Connect(function() activateRouteMode(2) end))
+
+addConnection(routeBtn3.MouseButton1Click:Connect(function()
+    if state.routeFarm then
+        setFarmStatus("Сначала останови автофарм")
+        return
+    end
+    if farmMode == "ROUTE" then
+        routeData[state.activeRoute].start = routeStart
+        routeData[state.activeRoute].points = routePoints
+        saveRouteLocal(true)
+    end
+    farmMode = "FLOORS"
+    refreshRouteButtons()
+    refreshFarmModeUI()
+    setFarmStatus("ЭТАЖИ // таймер " .. tostring(floorDurationMinutes) .. " мин")
+end))
+
 -- ---------------------------------------------------------
 -- ADD POINT LOGIC
 -- ---------------------------------------------------------
@@ -1604,21 +1913,23 @@ local function addNewRoutePoint()
             isChest = false,
         }
         table.insert(routePoints, insertIndex, newPoint)
+        routeData[state.activeRoute].points = routePoints
         saveRouteLocal(true)
-        if routePoints[insertIndex] ~= newPoint then error("Не удалось вставить точку в маршрут") end
+        if routePoints[insertIndex] ~= newPoint then error("Не удалось вставить точку") end
 
         rebuildRouteRows()
         scrollToRouteIndex(insertIndex)
 
         setFarmStatus(string.format(
-            "ДОБАВЛЕНО ✓  #%d  %s  // локально // всего %d",
+            "ДОБАВЛЕНО в %s // #%d %s // всего %d",
+            routeData[state.activeRoute].title,
             insertIndex, name, #routePoints))
 
         addPointBtn.Text = "ДОБАВЛЕНО ✓ // #" .. tostring(insertIndex)
 
         task.delay(0.8, function()
             if addPointBtn and addPointBtn.Parent then
-                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
+                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В АКТИВНЫЙ МАРШРУТ"
             end
             if addNameBox and addNameBox.Parent then addNameBox.Text = "" end
             if addCoordBox and addCoordBox.Parent then addCoordBox.Text = "" end
@@ -1633,7 +1944,7 @@ local function addNewRoutePoint()
         addPointBtn.Text = "ОШИБКА"
         task.delay(1.0, function()
             if addPointBtn and addPointBtn.Parent then
-                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В МАРШРУТ"
+                addPointBtn.Text = "+ ДОБАВИТЬ ЛОКАЦИЮ В АКТИВНЫЙ МАРШРУТ"
             end
         end)
     end
@@ -1647,87 +1958,364 @@ addConnection(addCoordBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then task.spawn(addNewRoutePoint) end
 end))
 
-local function pointInsideGui(guiObject, point)
-    if not guiObject or not guiObject.Parent or not guiObject.Visible then return false end
-    local pos = guiObject.AbsolutePosition
-    local size = guiObject.AbsoluteSize
-    return point.X >= pos.X and point.X <= pos.X + size.X
-       and point.Y >= pos.Y and point.Y <= pos.Y + size.Y
-end
-
+-- F6 оставляем как горячую клавишу. Кнопка добавления обрабатывается только через Activated.
 addConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not farmPage.Visible then return end
-    local isMouse = input.UserInputType == Enum.UserInputType.MouseButton1
-    local isTouch = input.UserInputType == Enum.UserInputType.Touch
-    if not isMouse and not isTouch then
-        if not gameProcessed and input.KeyCode == Enum.KeyCode.F6 then
-            task.spawn(addNewRoutePoint)
-        end
-        return
-    end
-    local point
-    if isTouch then
-        point = Vector2.new(input.Position.X, input.Position.Y)
-    else
-        point = UserInputService:GetMouseLocation()
-    end
-    if pointInsideGui(addPointBtn, point) then
+    if not farmPage.Visible or farmMode ~= "ROUTE" then return end
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.F6 then
         task.spawn(addNewRoutePoint)
     end
 end))
 
 -- ---------------------------------------------------------
+-- ЭТАЖИ // ПАНЕЛЬ РЕЖИМА
+-- ---------------------------------------------------------
+
+local floorsPanel = Instance.new("Frame")
+floorsPanel.Position = UDim2.fromOffset(0, 144)
+floorsPanel.Size = UDim2.new(1, 0, 0, 372)
+floorsPanel.BackgroundTransparency = 1
+floorsPanel.Visible = false
+floorsPanel.Parent = farmPage
+
+local function makeFloorInfoRow(y, titleText, valueText)
+    local row = Instance.new("Frame")
+    row.Position = UDim2.fromOffset(0, y)
+    row.Size = UDim2.new(1, 0, 0, 46)
+    row.BackgroundColor3 = C.panel
+    row.BorderSizePixel = 0
+    row.Parent = floorsPanel
+    round(row, 5)
+    addStroke(row, C.cyanDim, 0.42)
+    makeLabel(row, titleText, UDim2.fromOffset(10, 2), UDim2.new(1, -20, 0, 17), 13, C.muted, Enum.Font.GothamBold)
+    makeLabel(row, valueText, UDim2.fromOffset(10, 20), UDim2.new(1, -20, 0, 22), 15, C.text, Enum.Font.Code)
+    return row
+end
+
+local floorIntro = Instance.new("Frame")
+floorIntro.Position = UDim2.fromOffset(0, 0)
+floorIntro.Size = UDim2.new(1, 0, 0, 58)
+floorIntro.BackgroundColor3 = C.panel
+floorIntro.BorderSizePixel = 0
+floorIntro.Parent = floorsPanel
+round(floorIntro, 5)
+addStroke(floorIntro, C.text, 0.62)
+makeLabel(floorIntro, "ЭТАЖИ // АВТОЦИКЛ", UDim2.fromOffset(10, 2), UDim2.new(1, -20, 0, 20), 16, C.text, Enum.Font.GothamBold)
+makeLabel(floorIntro, "ДОМ → ПОРТАЛ → START(2С) → ИГРА TP → TOKENS2X×2 → ЭТАЖ → ТАЙМЕР → СМЕРТЬ → 15С → ПОВТОР", UDim2.fromOffset(10, 25), UDim2.new(1, -20, 0, 26), 13, C.muted, Enum.Font.Code).TextWrapped = true
+
+makeFloorInfoRow(64, "1 // ДОМ // ожидание 0.5 сек", formatXYZ(FLOOR_HOME))
+makeFloorInfoRow(116, "2 // ПОРТАЛ // START через 2 сек, затем кликаем до TP игры", formatXYZ(FLOOR_PORTAL))
+makeFloorInfoRow(168, "3 // ТОЧКА ЭТАЖЕЙ // только ПОСЛЕ TP игры на арену", formatXYZ(FLOOR_HOLD))
+
+local floorTimerCard = Instance.new("Frame")
+floorTimerCard.Position = UDim2.fromOffset(0, 220)
+floorTimerCard.Size = UDim2.new(1, 0, 0, 58)
+floorTimerCard.BackgroundColor3 = C.panel
+floorTimerCard.BorderSizePixel = 0
+floorTimerCard.Parent = floorsPanel
+round(floorTimerCard, 5)
+addStroke(floorTimerCard, C.cyanDim, 0.42)
+makeLabel(floorTimerCard, "ТАЙМЕР ДО СМЕРТИ // МИНУТЫ", UDim2.fromOffset(10, 0), UDim2.new(1, -130, 1, 0), 15, C.text, Enum.Font.GothamBold)
+
+local floorTimerBox = Instance.new("TextBox")
+floorTimerBox.Position = UDim2.new(1, -118, 0.5, -16)
+floorTimerBox.Size = UDim2.fromOffset(108, 32)
+floorTimerBox.BackgroundColor3 = C.panel2
+floorTimerBox.BorderSizePixel = 0
+floorTimerBox.ClearTextOnFocus = false
+floorTimerBox.Text = string.format("%.2f", floorDurationMinutes):gsub("0+$", ""):gsub("%.$", "")
+floorTimerBox.PlaceholderText = "10"
+floorTimerBox.TextColor3 = C.text
+floorTimerBox.PlaceholderColor3 = C.muted
+floorTimerBox.TextSize = 17
+floorTimerBox.Font = Enum.Font.Code
+floorTimerBox.TextXAlignment = Enum.TextXAlignment.Center
+floorTimerBox.Parent = floorTimerCard
+round(floorTimerBox, 5)
+addStroke(floorTimerBox, C.cyanDim, 0.45)
+
+local function syncFloorTimer()
+    local raw = tostring(floorTimerBox.Text or ""):gsub(",", "."):gsub("%s+", "")
+    local value = tonumber(raw)
+    if value then floorDurationMinutes = math.clamp(value, 0.05, 1440) end
+    floorTimerBox.Text = string.format("%.2f", floorDurationMinutes):gsub("0+$", ""):gsub("%.$", "")
+    saveRouteLocal(true)
+    return floorDurationMinutes
+end
+addConnection(floorTimerBox.FocusLost:Connect(function()
+    syncFloorTimer()
+    setFarmStatus("ЭТАЖИ // таймер = " .. tostring(floorDurationMinutes) .. " мин")
+end))
+
+local function getEndlessStartButton()
+    local screenGui = playerGui:FindFirstChild("ScreenGui")
+    local menus = screenGui and screenGui:FindFirstChild("Menus")
+    local endless = menus and menus:FindFirstChild("EndlessJoin")
+    local container = endless and endless:FindFirstChild("Container")
+    local mainFrame = container and container:FindFirstChild("Main")
+    local join = mainFrame and mainFrame:FindFirstChild("Join")
+    if join and join:IsA("GuiButton") then return join end
+    return nil
+end
+
+local function guiReallyVisible(obj)
+    if not obj or not obj.Parent or not obj:IsA("GuiObject") or not obj.Visible then return false end
+    local cur = obj.Parent
+    while cur and cur ~= playerGui do
+        if cur:IsA("GuiObject") and not cur.Visible then return false end
+        if cur:IsA("ScreenGui") and not cur.Enabled then return false end
+        cur = cur.Parent
+    end
+    return true
+end
+
+local function physicalGuiClick(button)
+    if not button or not button.Parent or not guiReallyVisible(button) then return false end
+
+    local x = math.floor(button.AbsolutePosition.X + button.AbsoluteSize.X * 0.5)
+    local y = math.floor(button.AbsolutePosition.Y + button.AbsoluteSize.Y * 0.5)
+
+    local ok = pcall(function()
+        -- Сначала ставим виртуальный курсор точно в центр кнопки.
+        VirtualInputManager:SendMouseMoveEvent(x, y, game)
+        task.wait(0.04)
+
+        -- Полный down/up, чуть дольше прежнего.
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+        task.wait(0.10)
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    end)
+
+    if ok then return true end
+
+    -- Дополнительный fallback через VirtualUser.
+    return pcall(function()
+        camera = workspace.CurrentCamera or camera
+        VirtualUser:CaptureController()
+        VirtualUser:Button1Down(Vector2.new(x, y), camera and camera.CFrame or CFrame.new())
+        task.wait(0.10)
+        VirtualUser:Button1Up(Vector2.new(x, y), camera and camera.CFrame or CFrame.new())
+    end)
+end
+
+local function clickGuiButton(button)
+    return physicalGuiClick(button)
+end
+
+local function clickEndlessStartButton(button)
+    if not button or not button.Parent or not guiReallyVisible(button) then
+        return false
+    end
+
+    local sent = false
+
+    -- Executor-friendly direct GUI signals.
+    -- Success is NOT assumed from this: below we still wait until the GAME
+    -- itself moves the character away from the portal.
+    if type(firesignal) == "function" then
+        local ok1 = pcall(function()
+            firesignal(button.MouseButton1Click)
+        end)
+        sent = sent or ok1
+
+        local ok2 = pcall(function()
+            firesignal(button.Activated)
+        end)
+        sent = sent or ok2
+    end
+
+    -- Also send a real virtual mouse click into the center of the button.
+    local ok3 = physicalGuiClick(button)
+    sent = sent or ok3
+
+    return sent
+end
+
+local function gameMovedPlayerToEndlessArena()
+    local root = getRoot()
+    if not root then return false end
+
+    -- HOME находится примерно в 80 studs от портала, поэтому порог 180
+    -- не примет обычный респавн/дом за успешный вход в Endless.
+    local distanceFromPortal = (root.Position - FLOOR_PORTAL).Magnitude
+    return distanceFromPortal >= 180
+end
+
+local function waitSecondsOnPortal(seconds, statusPrefix)
+    local duration = math.max(0, tonumber(seconds) or 0)
+    local startedAt = os.clock()
+
+    while alive and state.routeFarm and farmMode == "FLOORS" do
+        if gameMovedPlayerToEndlessArena() then
+            return true, "GAME_TP"
+        end
+
+        local elapsed = os.clock() - startedAt
+        if elapsed >= duration then
+            return true, "TIME"
+        end
+
+        local remaining = math.max(0, duration - elapsed)
+        setFarmStatus(string.format(
+            "%s // %.1f сек",
+            statusPrefix or "ЭТАЖИ // ждём",
+            remaining
+        ))
+        task.wait(0.10)
+    end
+
+    return false, "STOPPED"
+end
+
+local function pressStartUntilGameTeleport()
+    -- V39: после появления START ждём только 2 секунды.
+    local okWait = waitSecondsOnPortal(
+        2,
+        "ЭТАЖИ // START найден ✓ // первый клик через"
+    )
+    if not okWait or not state.routeFarm then return false end
+
+    local attempt = 0
+    local lastClickAt = 0
+
+    -- Не считаем скрытие меню успехом. Успех только когда сама ИГРА
+    -- реально перенесла персонажа далеко от портала.
+    while alive and state.routeFarm and farmMode == "FLOORS" do
+        if gameMovedPlayerToEndlessArena() then
+            local root = getRoot()
+            setFarmStatus(string.format(
+                "ЭТАЖИ // игра перенесла на арену ✓ // Y %.1f",
+                root and root.Position.Y or 0
+            ))
+            return true
+        end
+
+        local button = getEndlessStartButton()
+
+        if button and guiReallyVisible(button) and button.Active then
+            if os.clock() - lastClickAt >= 0.45 then
+                attempt += 1
+                lastClickAt = os.clock()
+
+                setFarmStatus(
+                    "ЭТАЖИ // START попытка #" .. tostring(attempt) ..
+                    " // ждём TP игры"
+                )
+
+                clickEndlessStartButton(button)
+            end
+        else
+            setFarmStatus(
+                "ЭТАЖИ // START скрыт // ждём TP игры или возврат кнопки"
+            )
+        end
+
+        task.wait(0.08)
+    end
+
+    return false
+end
+
+local floorTpPortalBtn = makeButton(floorsPanel, "TP ПОРТАЛ", UDim2.fromOffset(0, 286), UDim2.new(0.3333, -4, 0, 34))
+floorTpPortalBtn.TextSize = 12
+local floorCheckStartBtn = makeButton(floorsPanel, "START?", UDim2.new(0.3333, 4, 0, 286), UDim2.new(0.3333, -8, 0, 34))
+floorCheckStartBtn.TextSize = 12
+local floorTpHoldBtn = makeButton(floorsPanel, "TP ЭТАЖ", UDim2.new(0.6666, 4, 0, 286), UDim2.new(0.3334, -4, 0, 34))
+floorTpHoldBtn.TextSize = 12
+addConnection(floorTpPortalBtn.MouseButton1Click:Connect(function() safeTeleport(FLOOR_PORTAL); setFarmStatus("ЭТАЖИ // TP к порталу") end))
+addConnection(floorCheckStartBtn.MouseButton1Click:Connect(function()
+    local b = getEndlessStartButton()
+    if b and guiReallyVisible(b) then setFarmStatus("START НАЙДЕН ✓ // EndlessJoin.Container.Main.Join")
+    elseif b then setFarmStatus("START найден, но меню скрыто")
+    else setFarmStatus("START не найден") end
+end))
+addConnection(floorTpHoldBtn.MouseButton1Click:Connect(function() safeTeleport(FLOOR_HOLD); setFarmStatus("ЭТАЖИ // TP к точке ожидания") end))
+makeLabel(floorsPanel, "Таймер: 10 = 10 минут, 0.1 = 6 секунд для теста. Бесконечный круг — тумблер сверху.", UDim2.fromOffset(4, 328), UDim2.new(1, -8, 0, 40), 12, C.muted, Enum.Font.Code).TextWrapped = true
+
+-- ---------------------------------------------------------
+-- FOOTER-- ---------------------------------------------------------
 -- FOOTER
 -- ---------------------------------------------------------
 
 local footer = Instance.new("Frame")
-footer.Position = UDim2.fromOffset(0, 528)
-footer.Size = UDim2.new(1, 0, 0, 82)
+footer.Position = UDim2.fromOffset(0, 522)
+footer.Size = UDim2.new(1, 0, 0, 88)
 footer.BackgroundColor3 = C.panel
 footer.BorderSizePixel = 0
 footer.Parent = farmPage
 round(footer, 5)
 addStroke(footer, C.cyanDim, 0.38)
 
-local resetBtn = makeButton(footer, "СБРОСИТЬ МАРШРУТ",
+local resetBtn = makeButton(footer, "СБРОСИТЬ АКТИВНЫЙ",
     UDim2.fromOffset(8, 8), UDim2.new(0.5, -12, 0, 34))
-resetBtn.TextSize = 10
+resetBtn.TextSize = 11
 
-local clearBtn = makeButton(footer, "УДАЛИТЬ ВСЕ ТОЧКИ",
+local clearBtn = makeButton(footer, "ОЧИСТИТЬ АКТИВНЫЙ",
     UDim2.new(0.5, 4, 0, 8), UDim2.new(0.5, -12, 0, 34))
-clearBtn.TextSize = 10
+clearBtn.TextSize = 11
 
 farmStatusLabel = makeLabel(footer, "Готово // редактируй маршрут",
-    UDim2.fromOffset(10, 46), UDim2.new(1, -20, 0, 28),
+    UDim2.fromOffset(10, 46), UDim2.new(1, -20, 0, 34),
     10, C.muted, Enum.Font.Code)
 farmStatusLabel.TextWrapped = true
 farmStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Center
+farmStatusLabel.TextYAlignment = Enum.TextYAlignment.Top
+
+refreshFarmModeUI = function()
+    local routeVisible = farmMode == "ROUTE"
+    homeCard.Visible = routeVisible
+    addCard.Visible = routeVisible
+    routeOrderLabel.Visible = routeVisible
+    routeScroll.Visible = routeVisible
+    resetBtn.Visible = routeVisible
+    clearBtn.Visible = routeVisible
+    floorsPanel.Visible = not routeVisible
+    if routeVisible then
+        farmStatusLabel.Position = UDim2.fromOffset(10, 46)
+        farmStatusLabel.Size = UDim2.new(1, -20, 0, 34)
+    else
+        farmStatusLabel.Position = UDim2.fromOffset(10, 8)
+        farmStatusLabel.Size = UDim2.new(1, -20, 1, -16)
+    end
+end
+refreshFarmModeUI()
 
 if loadedLocalRoute then
-    setFarmStatus("Локальный маршрут загружен // " .. tostring(#routePoints) .. " точек")
+    setFarmStatus("Локальные маршруты загружены // R1: " .. tostring(#routeData[1].points) ..
+                  " // R2: " .. tostring(#routeData[2].points))
 elseif localRouteFileAvailable then
-    setFarmStatus("Локальный файл маршрута будет создан при изменении")
+    setFarmStatus("Файл маршрутов будет создан при изменении")
 else
-    setFarmStatus("Маршрут будет храниться локально в памяти Xeno")
+    setFarmStatus("Маршруты хранятся в памяти Xeno")
 end
 
 addConnection(resetBtn.MouseButton1Click:Connect(function()
+    if farmMode ~= "ROUTE" then return end
     if state.routeFarm then setFarmStatus("Сначала останови автофарм") return end
-    routeStart = DEFAULT_ROUTE_START
+
+    if state.activeRoute == 1 then
+        routeData[1].start = ROUTE1_START
+        routeData[1].points = cloneRoute(ROUTE1_POINTS)
+    else
+        routeData[2].start = ROUTE2_START
+        routeData[2].points = cloneRoute(ROUTE2_POINTS)
+    end
+
+    routeStart = routeData[state.activeRoute].start
+    routePoints = routeData[state.activeRoute].points
     startBox.Text = formatXYZ(routeStart)
-    routePoints = cloneRoute(DEFAULT_ROUTE_POINTS)
     saveRouteLocal(true)
     rebuildRouteRows()
-    setFarmStatus("Маршрут V30 восстановлен // сохранено локально")
+    setFarmStatus("Сброшен " .. routeData[state.activeRoute].title)
 end))
 
 addConnection(clearBtn.MouseButton1Click:Connect(function()
+    if farmMode ~= "ROUTE" then return end
     if state.routeFarm then setFarmStatus("Сначала останови автофарм") return end
     table.clear(routePoints)
+    routeData[state.activeRoute].points = routePoints
     saveRouteLocal(true)
     rebuildRouteRows()
-    setFarmStatus("Все точки удалены // сохранено локально")
+    setFarmStatus("Очищен " .. routeData[state.activeRoute].title)
 end))
 
 -- ---------------------------------------------------------
@@ -1753,7 +2341,8 @@ local function syncAllRouteEditors()
             end
         end
     end
-    saveRouteLocal(true)
+    routeData[state.activeRoute].points = routePoints
+    routeData[state.activeRoute].start = routeStart
 end
 
 -- =========================================================
@@ -1790,9 +2379,7 @@ local function holdPosition(pos, seconds, titleText)
             end)
         end
         local remaining = math.max(0, duration - elapsed)
-        setFarmStatus(string.format(
-            "%s // %.1f / %.1f сек // осталось %.1f",
-            titleText, elapsed, duration, remaining))
+        setFarmStatus(string.format("%s // %.1f / %.1f сек // осталось %.1f", titleText, elapsed, duration, remaining))
         task.wait(0.05)
     end
 end
@@ -1810,6 +2397,7 @@ local function processCurrentPoint()
     if #routePoints == 0 then
         setFarmStatus("Нет точек")
         state.routeFarm = false
+        setFarmToggleVisual(false)
         return
     end
     if routeIndex < 1 or routeIndex > #routePoints then routeIndex = 1 end
@@ -1824,6 +2412,12 @@ local function processCurrentPoint()
         setFarmStatus("СУНДУК ЗАБРАН ✓ // ДОМОЙ")
         if not goHome() then return end
         routeIndex = 1
+        if not state.routeLoop then
+            state.routeFarm = false
+            setFarmToggleVisual(false)
+            setFarmStatus("МАРШРУТ ЗАВЕРШЁН ✓ // один проход")
+            return
+        end
         setFarmStatus("НОВЫЙ КРУГ ✓ // точка 1")
         task.wait(0.12)
         return
@@ -1832,19 +2426,23 @@ local function processCurrentPoint()
     setFarmStatus("ТОЧКА " .. tostring(routeIndex) .. "/" .. tostring(#routePoints))
     hardTeleport(data.pos)
     holdPosition(data.pos, data.wait, "ТОЧКА " .. tostring(routeIndex))
-
     if state.routeFarm then
         routeIndex += 1
         if routeIndex > #routePoints then
             goHome()
             routeIndex = 1
+            if not state.routeLoop then
+                state.routeFarm = false
+                setFarmToggleVisual(false)
+                setFarmStatus("МАРШРУТ ЗАВЕРШЁН ✓ // один проход")
+            end
         end
     end
 end
 
 task.spawn(function()
     while alive do
-        if not state.routeFarm then
+        if farmMode ~= "ROUTE" or not state.routeFarm then
             routeStarted = false
             routeIndex = 1
             task.wait(0.10)
@@ -1852,6 +2450,7 @@ task.spawn(function()
         end
         if #routePoints == 0 then
             state.routeFarm = false
+            setFarmToggleVisual(false)
             setFarmStatus("Нет точек в маршруте")
             task.wait(0.20)
             continue
@@ -1859,13 +2458,448 @@ task.spawn(function()
         if not routeStarted then
             routeStarted = true
             routeIndex = 1
-            setFarmStatus("ЗАПУСК // TP ДОМОЙ")
+            setFarmStatus("ЗАПУСК // " .. routeData[state.activeRoute].title)
             if not goHome() then routeStarted = false; continue end
             setFarmStatus("СТАРТ ✓ // точка 1")
             task.wait(0.12)
         end
         processCurrentPoint()
         task.wait(0.03)
+    end
+end)
+
+-- =========================================================
+-- ЭТАЖИ // AUTO ENGINE V42
+-- =========================================================
+
+local floorCycleRunning = false
+local floorCycleCount = 0
+
+local function waitForEndlessStartButton(timeoutSeconds)
+    local startedAt = os.clock()
+    local timeout = math.max(1, tonumber(timeoutSeconds) or 12)
+    while alive and state.routeFarm and farmMode == "FLOORS" do
+        local button = getEndlessStartButton()
+        if button and guiReallyVisible(button) and button.Active then return button end
+        if os.clock() - startedAt >= timeout then break end
+        setFarmStatus(string.format("ЭТАЖИ // ждём кнопку START... %.1f сек", os.clock() - startedAt))
+        task.wait(0.10)
+    end
+    return nil
+end
+
+
+-- =========================================================
+-- FLOORS // AUTO TOKENS2X x2
+-- Найден анализатором:
+-- PlayerGui.ScreenGui.Menus.Inventory.Container.Main.Boosts.ScrollingFrame.Owned.tokens2x
+--
+-- Один обычный буст рассчитан на 300 сек.
+-- Два подряд = 600 сек локального ожидаемого времени.
+-- Скрипт подтверждает применение по уменьшению количества xN, когда это возможно.
+-- =========================================================
+
+local TOKENS2X_KEY = "tokens2x"
+local TOKENS2X_USES_PER_BATCH = 2
+local TOKENS2X_SECONDS_PER_USE = 300
+local TOKENS2X_BATCH_SECONDS = TOKENS2X_USES_PER_BATCH * TOKENS2X_SECONDS_PER_USE
+
+local tokens2xNextRefreshAt = 0
+local tokens2xBusy = false
+local tokens2xBatchesUsed = 0
+
+local function getTokens2xButton()
+    local screenGui = playerGui:FindFirstChild("ScreenGui")
+    local menus = screenGui and screenGui:FindFirstChild("Menus")
+    local inventory = menus and menus:FindFirstChild("Inventory")
+    local container = inventory and inventory:FindFirstChild("Container")
+    local mainFrame = container and container:FindFirstChild("Main")
+    local boosts = mainFrame and mainFrame:FindFirstChild("Boosts")
+    local scroll = boosts and boosts:FindFirstChild("ScrollingFrame")
+    local owned = scroll and scroll:FindFirstChild("Owned")
+    local button = owned and owned:FindFirstChild(TOKENS2X_KEY)
+
+    if button and button:IsA("GuiButton") then
+        return button
+    end
+
+    return nil
+end
+
+local function getTokens2xQuantity(button)
+    if not button or not button.Parent then return nil end
+
+    local best = nil
+    for _, obj in ipairs(button:GetDescendants()) do
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+            local raw = tostring(obj.Text or "")
+            local n = raw:match("[xX]%s*(%d+)")
+            if n then
+                n = tonumber(n)
+                if n and (not best or n > best) then
+                    best = n
+                end
+            end
+        end
+    end
+
+    return best
+end
+
+local function waitTokens2xQuantityDrop(button, before, timeout)
+    if not before then
+        task.wait(0.20)
+        return nil
+    end
+
+    local deadline = os.clock() + (tonumber(timeout) or 0.8)
+    while alive and state.routeFarm and farmMode == "FLOORS" do
+        local after = getTokens2xQuantity(button)
+        if after and after < before then
+            return after
+        end
+        if os.clock() >= deadline then break end
+        task.wait(0.05)
+    end
+
+    return getTokens2xQuantity(button)
+end
+
+local function signalOneTokens2x(button)
+    if not button or not button.Parent then return false, "BUTTON_MISSING" end
+
+    local before = getTokens2xQuantity(button)
+
+    -- 1) Точный обработчик той кнопки, которую пользователь нажимал вручную.
+    if type(firesignal) == "function" then
+        local okClick = pcall(function()
+            firesignal(button.MouseButton1Click)
+        end)
+
+        if okClick then
+            local after = waitTokens2xQuantityDrop(button, before, 0.75)
+            if not before or (after and after < before) then
+                return true, "MouseButton1Click", before, after
+            end
+        end
+
+        local beforeActivated = getTokens2xQuantity(button)
+        local okActivated = pcall(function()
+            firesignal(button.Activated)
+        end)
+
+        if okActivated then
+            local after = waitTokens2xQuantityDrop(button, beforeActivated, 0.75)
+            if not beforeActivated or (after and after < beforeActivated) then
+                return true, "Activated", beforeActivated, after
+            end
+        end
+    end
+
+    -- 2) Fallback: нормальный игровой remote, если он существует.
+    if UseBoost and UseBoost:IsA("RemoteEvent") then
+        local beforeRemote = getTokens2xQuantity(button)
+        local okRemote = pcall(function()
+            UseBoost:FireServer(TOKENS2X_KEY)
+        end)
+
+        if okRemote then
+            local after = waitTokens2xQuantityDrop(button, beforeRemote, 0.90)
+            if not beforeRemote or (after and after < beforeRemote) then
+                return true, "UseBoost", beforeRemote, after
+            end
+        end
+    end
+
+    return false, "NO_CONFIRM", before, getTokens2xQuantity(button)
+end
+
+local function activateTokens2xBatch()
+    if tokens2xBusy then return false end
+    tokens2xBusy = true
+
+    local okResult = false
+
+    local ok, err = xpcall(function()
+        local button = getTokens2xButton()
+        if not button then
+            error("tokens2x не найден в Inventory/Boosts/Owned")
+        end
+
+        local available = getTokens2xQuantity(button)
+        if available and available < TOKENS2X_USES_PER_BATCH then
+            error("tokens2x осталось меньше 2 // x" .. tostring(available))
+        end
+
+        setFarmStatus("ЭТАЖИ // TOKENS2X // активируем 1/2")
+
+        local ok1, method1, before1, after1 = signalOneTokens2x(button)
+        if not ok1 then
+            error("tokens2x 1/2 не подтверждён // " .. tostring(method1))
+        end
+
+        task.wait(0.25)
+
+        -- GUI может перестроить кнопку после первого использования.
+        button = getTokens2xButton() or button
+
+        setFarmStatus("ЭТАЖИ // TOKENS2X // активируем 2/2")
+
+        local ok2, method2, before2, after2 = signalOneTokens2x(button)
+        if not ok2 then
+            error("tokens2x 2/2 не подтверждён // " .. tostring(method2))
+        end
+
+        tokens2xNextRefreshAt = os.clock() + TOKENS2X_BATCH_SECONDS
+        tokens2xBatchesUsed += 1
+        okResult = true
+
+        local qty = getTokens2xQuantity(button)
+        setFarmStatus(string.format(
+            "ЭТАЖИ // TOKENS2X ×2 ✓ // осталось %s // обновление через 10:00",
+            qty and ("x" .. tostring(qty)) or "?"
+        ))
+    end, function(message)
+        return tostring(message)
+    end)
+
+    tokens2xBusy = false
+
+    if not ok then
+        setFarmStatus("ЭТАЖИ // TOKENS2X ERROR // " .. tostring(err):gsub("\n.*", ""))
+        return false
+    end
+
+    return okResult
+end
+
+local function ensureTokens2xActive(forceFirst)
+    if tokens2xBusy then return false end
+
+    local now = os.clock()
+
+    if forceFirst and tokens2xNextRefreshAt <= 0 then
+        return activateTokens2xBatch()
+    end
+
+    if tokens2xNextRefreshAt > 0 and now >= tokens2xNextRefreshAt then
+        return activateTokens2xBatch()
+    end
+
+    return true
+end
+
+local function waitForFloorLanding(timeoutSeconds)
+    local startedAt = os.clock()
+    local timeout = math.max(1, tonumber(timeoutSeconds) or 10)
+    while alive and state.routeFarm and farmMode == "FLOORS" do
+        local root = getRoot()
+        local humanoid = getHumanoid()
+        if root and humanoid then
+            local landed = humanoid.FloorMaterial ~= Enum.Material.Air
+            local verticalSpeed = math.abs(root.AssemblyLinearVelocity.Y)
+            if landed and verticalSpeed < 6 then
+                root.AssemblyAngularVelocity = Vector3.zero
+                return true
+            end
+            setFarmStatus(string.format(
+                "ЭТАЖИ // опускаемся... Y %.1f // %.1f сек",
+                root.Position.Y,
+                os.clock() - startedAt
+            ))
+        end
+        if os.clock() - startedAt >= timeout then
+            return false
+        end
+        task.wait(0.08)
+    end
+    return false
+end
+
+local function holdFloorSpot(minutes)
+    -- V34: во время таймера НЕ фиксируем CFrame.
+    -- После TP персонаж свободно падает под действием гравитации и стоит там, где приземлился.
+    local duration = math.max(3, (tonumber(minutes) or 10) * 60)
+    local startedAt = os.clock()
+    local nextStatusAt = 0
+    while alive and state.routeFarm and farmMode == "FLOORS" do
+        local elapsed = os.clock() - startedAt
+        if elapsed >= duration then return true end
+
+        local humanoid = getHumanoid()
+        local root = getRoot()
+        if not humanoid or not root or humanoid.Health <= 0 then
+            return false
+        end
+
+        -- TOKENS2X поддерживаем непрерывно во время нахождения на этажах.
+        if tokens2xNextRefreshAt > 0 and os.clock() >= tokens2xNextRefreshAt and not tokens2xBusy then
+            activateTokens2xBatch()
+        end
+
+        if elapsed >= nextStatusAt then
+            nextStatusAt = elapsed + 0.5
+            local remaining = math.max(0, duration - elapsed)
+            local m = math.floor(remaining / 60)
+            local sec = math.floor(remaining % 60)
+
+            local boostText = ""
+            if tokens2xNextRefreshAt > 0 then
+                local boostLeft = math.max(0, tokens2xNextRefreshAt - os.clock())
+                local bm = math.floor(boostLeft / 60)
+                local bs = math.floor(boostLeft % 60)
+                boostText = string.format(" // TOKENS2X %02d:%02d", bm, bs)
+            end
+
+            setFarmStatus(string.format(
+                "ЭТАЖИ // ожидание %02d:%02d // Y %.1f // круг #%d%s",
+                m, sec, root.Position.Y, floorCycleCount + 1, boostText
+            ))
+        end
+        task.wait(0.10)
+    end
+    return false
+end
+
+local function killForFloorCycle()
+    local char = getCharacter()
+    local humanoid = getHumanoid()
+    if not char or not humanoid then return nil end
+    setFarmStatus("ЭТАЖИ // таймер окончен // умираем...")
+    pcall(function() humanoid.Health = 0 end)
+    pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Dead) end)
+    task.wait(0.15)
+    pcall(function() char:BreakJoints() end)
+    return char
+end
+
+local function waitAfterFloorDeath(seconds)
+    local duration = math.max(0, tonumber(seconds) or 15)
+    local startedAt = os.clock()
+
+    while alive and state.routeFarm and farmMode == "FLOORS" do
+        local elapsed = os.clock() - startedAt
+        if elapsed >= duration then
+            return true
+        end
+
+        local remaining = math.max(0, duration - elapsed)
+        setFarmStatus(string.format(
+            "ЭТАЖИ // смерть // ждём %.1f сек // новый круг через %.1f",
+            duration,
+            remaining
+        ))
+
+        task.wait(0.10)
+    end
+
+    return false
+end
+
+local function floorGoHome()
+    local deadline = os.clock() + 12
+    while alive and state.routeFarm and farmMode == "FLOORS" do
+        if hardTeleport(FLOOR_HOME) then
+            holdPosition(FLOOR_HOME, 0.50, "ЭТАЖИ // ДОМА")
+            return true
+        end
+        if os.clock() >= deadline then return false end
+        task.wait(0.15)
+    end
+    return false
+end
+
+local function runFloorCycle()
+    syncFloorTimer()
+    if not floorGoHome() then return false, "Не найден персонаж для дома" end
+    if not state.routeFarm then return false end
+
+    setFarmStatus("ЭТАЖИ // TP к порталу")
+    if not hardTeleport(FLOOR_PORTAL) then return false, "Не удалось TP к порталу" end
+    holdPosition(FLOOR_PORTAL, 0.35, "ЭТАЖИ // ПОРТАЛ")
+    if not state.routeFarm then return false end
+
+    local startButton = waitForEndlessStartButton(20)
+    if not startButton then return false, "Кнопка START не появилась" end
+
+    setFarmStatus("ЭТАЖИ // START найден ✓ // ждём 2 сек")
+    if not pressStartUntilGameTeleport() then
+        return false, "START/TP игры не подтверждён"
+    end
+    if not state.routeFarm then return false end
+
+    -- ВАЖНО: до этого места скрипт НЕ поднимает персонажа на FLOOR_HOLD.
+    -- Сначала сама игра должна перенести его с портала на Endless-арену.
+    local settleStarted = os.clock()
+    while alive and state.routeFarm and farmMode == "FLOORS"
+        and os.clock() - settleStarted < 0.80 do
+        task.wait(0.05)
+    end
+    if not state.routeFarm then return false end
+
+    setFarmStatus("ЭТАЖИ // TP игры подтверждён ✓ // проверяем TOKENS2X")
+    ensureTokens2xActive(true)
+    if not state.routeFarm then return false end
+
+    setFarmStatus("ЭТАЖИ // теперь TP к точке этажей")
+    if not hardTeleport(FLOOR_HOLD) then return false, "Не удалось TP на этаж" end
+
+    -- После TP больше не удерживаем Y=102.26: гравитация должна опустить персонажа на поверхность.
+    local landed = waitForFloorLanding(10)
+    if not landed then
+        setFarmStatus("ЭТАЖИ // посадка не подтверждена // таймер всё равно запущен")
+        task.wait(0.20)
+    else
+        setFarmStatus("ЭТАЖИ // приземлились ✓ // запускаем таймер")
+        task.wait(0.15)
+    end
+
+    if not holdFloorSpot(floorDurationMinutes) or not state.routeFarm then return false end
+
+    local oldCharacter = killForFloorCycle()
+    if not oldCharacter then return false, "Не удалось получить Humanoid" end
+
+    -- V39: после смерти ничего не нажимаем.
+    -- Ждём 15 секунд, затем запускаем следующий цикл.
+    if not waitAfterFloorDeath(15) then return false end
+    if not state.routeFarm then return false end
+
+    floorCycleCount += 1
+    if not state.routeLoop then
+        state.routeFarm = false
+        setFarmToggleVisual(false)
+        setFarmStatus("ЭТАЖИ ЗАВЕРШЕНЫ ✓ // один проход")
+        return false
+    end
+    setFarmStatus("ЭТАЖИ // новый круг #" .. tostring(floorCycleCount + 1))
+    task.wait(0.25)
+    return true
+end
+
+task.spawn(function()
+    while alive do
+        if farmMode ~= "FLOORS" or not state.routeFarm then
+            floorCycleRunning = false
+            task.wait(0.12)
+            continue
+        end
+        if floorCycleRunning then task.wait(0.10); continue end
+        floorCycleRunning = true
+        local ok, shouldContinue, err = pcall(function()
+            local c, m = runFloorCycle()
+            return c, m
+        end)
+        floorCycleRunning = false
+        if not ok then
+            state.routeFarm = false
+            setFarmToggleVisual(false)
+            setFarmStatus("ЭТАЖИ ERROR // " .. tostring(shouldContinue))
+        elseif state.routeFarm and shouldContinue == false and err then
+            state.routeFarm = false
+            setFarmToggleVisual(false)
+            setFarmStatus("ЭТАЖИ ОСТАНОВЛЕНЫ // " .. tostring(err))
+        end
+        task.wait(0.15)
     end
 end)
 
@@ -2033,6 +3067,7 @@ local function shutdown()
     state.fly = false
     state.autoClick = false
     state.infiniteJump = false
+    state.autoPlaytimeRewards = false
     state.autoRebirth = false
     state.antiAfk = false
     state.routeFarm = false
@@ -2067,6 +3102,8 @@ end
 
 addConnection(closeBtn.MouseButton1Click:Connect(shutdown))
 
-print("[CYBER PANEL V30 RU] Loaded")
-print("[CYBER PANEL V30 RU] Route: 12 локаций + СУНДУК (5238.85, 4.83, 1302.39)")
-print("[CYBER PANEL V30 RU] All functions OFF")
+print("[CYBER PANEL V42 RU] Loaded")
+print("[CYBER PANEL V42 RU] Route 1: 15 лок + сундук (1589.98)")
+print("[CYBER PANEL V42 RU] Route 2: Кубки N2 (1 точка + сундук 226.39)")
+print("[CYBER PANEL V42 RU] Floors: HOME -> PORTAL -> START -> FALL -> TIMER -> DEATH -> NO -> 1.5s -> HOME")
+print("[CYBER PANEL V42 RU] All functions OFF")
