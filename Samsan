@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V42 RU
+    CYBER PANEL V41 RU
 
     Вкладка "ПЕРСОНАЖ":
       • Ник + координаты + копирование
@@ -122,7 +122,7 @@ for _, name in ipairs({
     "CyberPanelV16", "CyberPanelV17", "CyberPanelV18", "CyberPanelV19",
     "CyberPanelV20", "CyberPanelV21", "CyberPanelV22", "CyberPanelV23",
     "CyberPanelV27", "CyberPanelV28", "CyberPanelV29", "CyberPanelV30",
-    "CyberPanelV31", "CyberPanelV32", "CyberPanelV33", "CyberPanelV40", "CyberPanelV41", "CyberPanelV42",
+    "CyberPanelV31", "CyberPanelV32", "CyberPanelV33", "CyberPanelV41",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -199,7 +199,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV42"
+gui.Name = "CyberPanelV41"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -223,7 +223,7 @@ topLine.BackgroundColor3 = C.cyan
 topLine.BorderSizePixel = 0
 topLine.Parent = main
 
-makeLabel(main, "BLACK // PANEL V42",
+makeLabel(main, "BLACK // PANEL V41",
     UDim2.fromOffset(12, 7), UDim2.fromOffset(190, 19),
     16, C.text, Enum.Font.GothamBold)
 
@@ -603,21 +603,25 @@ end))
 
 
 -- =========================================================
--- AUTO PLAYTIME REWARDS V42
--- =========================================================
--- Лог подтвердил:
---   PlaytimeRewards.Container.Main.ScrollingFrame
---   карточки: ImageButton "1".."12"
---   состояние: Container.Claim.TextLabel = CLAIM / CLAIMED
---   таймер: Container.Timer
--- Ручной успешный клик был именно по самой карточке ImageButton.
+-- AUTO PLAYTIME REWARDS
+--
+-- Анализатор подтвердил:
+--   PlayerGui.ScreenGui.Menus.PlaytimeRewards.Container.Main.ScrollingFrame
+-- Каждая награда = ImageButton с именем "1".."12".
+-- Внутри:
+--   Container.Timer
+--   Container.Claim.TextLabel  ("CLAIM" / "CLAIMED")
+--
+-- Ручной клик по самой карточке успешно меняет CLAIM -> CLAIMED.
+-- Поэтому мы не пытаемся нажимать внутренний TextLabel.
 -- =========================================================
 
-local playtimeRewardAttempts = {}
+local playtimeLastAttempt = {}
+local playtimeClaimedCount = 0
 
-local function findPlaytimeScrolling()
-    local sg = playerGui:FindFirstChild("ScreenGui")
-    local menus = sg and sg:FindFirstChild("Menus")
+local function getPlaytimeScrollingFrame()
+    local screenGui = playerGui:FindFirstChild("ScreenGui")
+    local menus = screenGui and screenGui:FindFirstChild("Menus")
     local playtime = menus and menus:FindFirstChild("PlaytimeRewards")
     local container = playtime and playtime:FindFirstChild("Container")
     local mainFrame = container and container:FindFirstChild("Main")
@@ -630,88 +634,178 @@ local function findPlaytimeScrolling()
     return nil
 end
 
-local function readPlaytimeCard(card)
-    if not card or not card.Parent then
-        return nil, nil
+local function getPlaytimeCardState(card)
+    if not card or not card.Parent or not card:IsA("GuiButton") then
+        return nil
     end
 
     local container = card:FindFirstChild("Container")
-    if not container then
-        return nil, nil
-    end
-
-    local timer = container:FindFirstChild("Timer")
-    local claim = container:FindFirstChild("Claim")
+    local timer = container and container:FindFirstChild("Timer")
+    local claim = container and container:FindFirstChild("Claim")
     local claimLabel = claim and claim:FindFirstChild("TextLabel")
 
     local timerText = timer and tostring(timer.Text or "") or ""
     local claimText = claimLabel and string.upper(tostring(claimLabel.Text or "")) or ""
 
-    local mm, ss = string.match(timerText, "^%s*(%d+):(%d%d)%s*$")
-    local secondsLeft = nil
+    local minutes, seconds = timerText:match("^%s*(%d+):(%d%d)%s*$")
+    local remaining = nil
 
-    if mm and ss then
-        secondsLeft = (tonumber(mm) or 0) * 60 + (tonumber(ss) or 0)
+    if minutes and seconds then
+        remaining = tonumber(minutes) * 60 + tonumber(seconds)
     end
 
-    return claimText, secondsLeft
+    return {
+        timer = timer,
+        timerText = timerText,
+        remaining = remaining,
+        claimLabel = claimLabel,
+        claimText = claimText,
+    }
 end
 
-local function firePlaytimeCard(card)
-    if not card or not card.Parent then
-        return false
+local function playtimeCardIsReady(card)
+    local info = getPlaytimeCardState(card)
+    if not info then return false, nil end
+
+    -- В логе ручной успешный клик был на 00:01 + CLAIM.
+    -- Поэтому пытаемся забирать при 00:01 / 00:00.
+    local ready =
+        info.claimText == "CLAIM"
+        and info.remaining ~= nil
+        and info.remaining <= 1
+
+    return ready, info
+end
+
+local function physicalPlaytimeCardClick(card)
+    if not card or not card.Parent then return false end
+
+    -- Физический fallback работает только когда окно действительно видно.
+    local cur = card
+    while cur and cur ~= playerGui do
+        if cur:IsA("GuiObject") and not cur.Visible then
+            return false
+        end
+        if cur:IsA("ScreenGui") and not cur.Enabled then
+            return false
+        end
+        cur = cur.Parent
     end
 
-    if type(firesignal) ~= "function" then
-        return false
-    end
+    local x = math.floor(card.AbsolutePosition.X + card.AbsoluteSize.X * 0.5)
+    local y = math.floor(card.AbsolutePosition.Y + card.AbsoluteSize.Y * 0.5)
 
-    -- Используем только один сигнал за попытку.
-    local ok = pcall(function()
-        firesignal(card.MouseButton1Click)
+    return pcall(function()
+        VirtualInputManager:SendMouseMoveEvent(x, y, game)
+        task.wait(0.03)
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+        task.wait(0.07)
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
     end)
-
-    return ok
 end
 
-local function scanPlaytimeRewards()
-    local scrolling = findPlaytimeScrolling()
+local function triggerPlaytimeCard(card)
+    if not card or not card.Parent then
+        return false, "CARD_MISSING"
+    end
+
+    local before = getPlaytimeCardState(card)
+    if not before or before.claimText ~= "CLAIM" then
+        return false, "NOT_CLAIM"
+    end
+
+    -- 1) Сначала точное событие самой карточки.
+    if type(firesignal) == "function" then
+        pcall(function()
+            firesignal(card.MouseButton1Click)
+        end)
+
+        task.wait(0.10)
+
+        local after = getPlaytimeCardState(card)
+        if after and after.claimText == "CLAIMED" then
+            return true, "MouseButton1Click"
+        end
+
+        pcall(function()
+            firesignal(card.Activated)
+        end)
+
+        task.wait(0.10)
+
+        after = getPlaytimeCardState(card)
+        if after and after.claimText == "CLAIMED" then
+            return true, "Activated"
+        end
+    end
+
+    -- 2) Если окно открыто, пробуем обычный виртуальный клик.
+    physicalPlaytimeCardClick(card)
+    task.wait(0.12)
+
+    local after = getPlaytimeCardState(card)
+    if after and after.claimText == "CLAIMED" then
+        return true, "VirtualInput"
+    end
+
+    return false, "NO_CONFIRM"
+end
+
+local function collectReadyPlaytimeRewards()
+    local scrolling = getPlaytimeScrollingFrame()
     if not scrolling then
         return
     end
 
-    for i = 1, 12 do
+    local cards = {}
+
+    for _, child in ipairs(scrolling:GetChildren()) do
+        if child:IsA("GuiButton") and tonumber(child.Name) then
+            cards[#cards + 1] = child
+        end
+    end
+
+    table.sort(cards, function(a, b)
+        return (tonumber(a.Name) or 999) < (tonumber(b.Name) or 999)
+    end)
+
+    for _, card in ipairs(cards) do
         if not state.autoPlaytimeRewards or not alive then
             return
         end
 
-        local card = scrolling:FindFirstChild(tostring(i))
+        local ready, info = playtimeCardIsReady(card)
 
-        if card and card:IsA("GuiButton") then
-            local claimText, secondsLeft = readPlaytimeCard(card)
+        if ready then
+            local key = tostring(card.Name)
+            local now = os.clock()
+            local lastAttempt = playtimeLastAttempt[key] or 0
 
-            -- В твоём логе карточка успешно забиралась при 00:01 + CLAIM.
-            if claimText == "CLAIM"
-                and secondsLeft ~= nil
-                and secondsLeft <= 1 then
+            -- Не спамим одну карточку десятками сигналов в одну секунду.
+            if now - lastAttempt >= 0.45 then
+                playtimeLastAttempt[key] = now
 
-                local key = tostring(i)
-                local now = os.clock()
-                local last = playtimeRewardAttempts[key] or 0
+                local ok, method = triggerPlaytimeCard(card)
 
-                if now - last >= 0.75 then
-                    playtimeRewardAttempts[key] = now
+                if ok then
+                    playtimeClaimedCount += 1
+                    playtimeLastAttempt[key] = os.clock()
 
-                    local sent = firePlaytimeCard(card)
+                    print(string.format(
+                        "[AUTO PLAYTIME] награда #%s получена // %s // всего %d",
+                        key,
+                        tostring(method),
+                        playtimeClaimedCount
+                    ))
 
-                    if sent then
-                        print(
-                            "[AUTO PLAYTIME] CLAIM #" ..
-                            key ..
-                            " // timer=" ..
-                            tostring(secondsLeft)
-                        )
-                    end
+                    task.wait(0.15)
+                else
+                    print(string.format(
+                        "[AUTO PLAYTIME] награда #%s готова (%s), повторим // %s",
+                        key,
+                        info and info.timerText or "?",
+                        tostring(method)
+                    ))
                 end
             end
         end
@@ -721,15 +815,10 @@ end
 task.spawn(function()
     while alive do
         if state.autoPlaytimeRewards then
-            local ok, err = pcall(scanPlaytimeRewards)
-
-            if not ok then
-                warn("[AUTO PLAYTIME ERROR] " .. tostring(err))
-            end
-
-            task.wait(0.25)
+            pcall(collectReadyPlaytimeRewards)
+            task.wait(0.18)
         else
-            task.wait(0.50)
+            task.wait(0.35)
         end
     end
 end)
@@ -1104,7 +1193,7 @@ local routeData = {
 }
 
 -- =========================================================
--- ЭТАЖИ // FIXED POINTS V42
+-- ЭТАЖИ // FIXED POINTS V41
 -- =========================================================
 
 local FLOOR_HOME = Vector3.new(5251.50, 4.45, 94.00)
@@ -1300,7 +1389,7 @@ farmInfo.Parent = farmPage
 round(farmInfo, 5)
 addStroke(farmInfo, C.text, 0.68)
 
-makeLabel(farmInfo, "АВТОФАРМ V42 // 2 МАРШРУТА + ЭТАЖИ",
+makeLabel(farmInfo, "АВТОФАРМ V41 // 2 МАРШРУТА + ЭТАЖИ",
     UDim2.fromOffset(12, 3), UDim2.new(1, -24, 0, 20),
     16, C.text, Enum.Font.GothamBold)
 
@@ -2469,7 +2558,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- ЭТАЖИ // AUTO ENGINE V42
+-- ЭТАЖИ // AUTO ENGINE V41
 -- =========================================================
 
 local floorCycleRunning = false
@@ -3102,8 +3191,8 @@ end
 
 addConnection(closeBtn.MouseButton1Click:Connect(shutdown))
 
-print("[CYBER PANEL V42 RU] Loaded")
-print("[CYBER PANEL V42 RU] Route 1: 15 лок + сундук (1589.98)")
-print("[CYBER PANEL V42 RU] Route 2: Кубки N2 (1 точка + сундук 226.39)")
-print("[CYBER PANEL V42 RU] Floors: HOME -> PORTAL -> START -> FALL -> TIMER -> DEATH -> NO -> 1.5s -> HOME")
-print("[CYBER PANEL V42 RU] All functions OFF")
+print("[CYBER PANEL V41 RU] Loaded")
+print("[CYBER PANEL V41 RU] Route 1: 15 лок + сундук (1589.98)")
+print("[CYBER PANEL V41 RU] Route 2: Кубки N2 (1 точка + сундук 226.39)")
+print("[CYBER PANEL V41 RU] Floors: HOME -> PORTAL -> START -> FALL -> TIMER -> DEATH -> NO -> 1.5s -> HOME")
+print("[CYBER PANEL V41 RU] All functions OFF")
