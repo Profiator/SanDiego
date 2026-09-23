@@ -1,5 +1,5 @@
 --[[
-    CYBER PANEL V41 RU
+    CYBER PANEL V43 RU
 
     Вкладка "ПЕРСОНАЖ":
       • Ник + координаты + копирование
@@ -122,7 +122,7 @@ for _, name in ipairs({
     "CyberPanelV16", "CyberPanelV17", "CyberPanelV18", "CyberPanelV19",
     "CyberPanelV20", "CyberPanelV21", "CyberPanelV22", "CyberPanelV23",
     "CyberPanelV27", "CyberPanelV28", "CyberPanelV29", "CyberPanelV30",
-    "CyberPanelV31", "CyberPanelV32", "CyberPanelV33", "CyberPanelV41",
+    "CyberPanelV31", "CyberPanelV32", "CyberPanelV33", "CyberPanelV40", "CyberPanelV41", "CyberPanelV42", "CyberPanelV43",
 }) do
     local old = guiParent:FindFirstChild(name)
     if old then
@@ -199,7 +199,7 @@ end
 -- =========================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "CyberPanelV41"
+gui.Name = "CyberPanelV43"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = guiParent
@@ -223,7 +223,7 @@ topLine.BackgroundColor3 = C.cyan
 topLine.BorderSizePixel = 0
 topLine.Parent = main
 
-makeLabel(main, "BLACK // PANEL V41",
+makeLabel(main, "BLACK // PANEL V43",
     UDim2.fromOffset(12, 7), UDim2.fromOffset(190, 19),
     16, C.text, Enum.Font.GothamBold)
 
@@ -603,209 +603,326 @@ end))
 
 
 -- =========================================================
--- AUTO PLAYTIME REWARDS
---
--- Анализатор подтвердил:
---   PlayerGui.ScreenGui.Menus.PlaytimeRewards.Container.Main.ScrollingFrame
--- Каждая награда = ImageButton с именем "1".."12".
--- Внутри:
---   Container.Timer
---   Container.Claim.TextLabel  ("CLAIM" / "CLAIMED")
---
--- Ручной клик по самой карточке успешно меняет CLAIM -> CLAIMED.
--- Поэтому мы не пытаемся нажимать внутренний TextLabel.
+-- AUTO PLAYTIME REWARDS V43
+-- =========================================================
+-- Готовность определяем НЕ по таймеру.
+-- На скриншоте видно: когда награда готова, внутри карточки становится
+-- видимой зелёная область Container.Claim с текстом CLAIM / ПОЛУЧИТЬ.
+-- У будущих карточек CLAIM может существовать в дереве, но сама область
+-- Claim скрыта, пока идёт таймер.
 -- =========================================================
 
-local playtimeLastAttempt = {}
+local playtimeRewardAttempts = {}
 local playtimeClaimedCount = 0
 
-local function getPlaytimeScrollingFrame()
-    local screenGui = playerGui:FindFirstChild("ScreenGui")
-    local menus = screenGui and screenGui:FindFirstChild("Menus")
+local function getPlaytimeObjects()
+    local sg = playerGui:FindFirstChild("ScreenGui")
+    local menus = sg and sg:FindFirstChild("Menus")
     local playtime = menus and menus:FindFirstChild("PlaytimeRewards")
     local container = playtime and playtime:FindFirstChild("Container")
     local mainFrame = container and container:FindFirstChild("Main")
     local scrolling = mainFrame and mainFrame:FindFirstChild("ScrollingFrame")
 
-    if scrolling and scrolling:IsA("ScrollingFrame") then
-        return scrolling
+    return sg, playtime, scrolling
+end
+
+local function getPlaytimeOpenButton()
+    local sg = playerGui:FindFirstChild("ScreenGui")
+    local right = sg and sg:FindFirstChild("Right")
+    local holder = right and right:FindFirstChild("PlaytimeReward")
+    local button = holder and holder:FindFirstChild("Button")
+
+    if button and button:IsA("GuiButton") then
+        return button
     end
 
     return nil
 end
 
-local function getPlaytimeCardState(card)
+local function guiActuallyVisible(obj)
+    if not obj or not obj.Parent or not obj:IsA("GuiObject") then
+        return false
+    end
+
+    if not obj.Visible then
+        return false
+    end
+
+    local cur = obj.Parent
+    while cur and cur ~= playerGui do
+        if cur:IsA("GuiObject") and not cur.Visible then
+            return false
+        end
+
+        if cur:IsA("ScreenGui") and not cur.Enabled then
+            return false
+        end
+
+        cur = cur.Parent
+    end
+
+    return true
+end
+
+local function getCardInfo(card)
     if not card or not card.Parent or not card:IsA("GuiButton") then
         return nil
     end
 
     local container = card:FindFirstChild("Container")
-    local timer = container and container:FindFirstChild("Timer")
-    local claim = container and container:FindFirstChild("Claim")
+    if not container then
+        return nil
+    end
+
+    local timer = container:FindFirstChild("Timer")
+    local claim = container:FindFirstChild("Claim")
     local claimLabel = claim and claim:FindFirstChild("TextLabel")
 
     local timerText = timer and tostring(timer.Text or "") or ""
     local claimText = claimLabel and string.upper(tostring(claimLabel.Text or "")) or ""
 
-    local minutes, seconds = timerText:match("^%s*(%d+):(%d%d)%s*$")
-    local remaining = nil
-
-    if minutes and seconds then
-        remaining = tonumber(minutes) * 60 + tonumber(seconds)
-    end
-
     return {
+        container = container,
         timer = timer,
         timerText = timerText,
-        remaining = remaining,
+        claim = claim,
         claimLabel = claimLabel,
         claimText = claimText,
+
+        -- ВАЖНО:
+        -- проверяем именно Visible самой зелёной области Claim.
+        -- Это свойство остаётся доступно даже когда всё меню закрыто.
+        claimLocalVisible =
+            claim ~= nil
+            and claim:IsA("GuiObject")
+            and claim.Visible == true,
     }
 end
 
-local function playtimeCardIsReady(card)
-    local info = getPlaytimeCardState(card)
-    if not info then return false, nil end
-
-    -- В логе ручной успешный клик был на 00:01 + CLAIM.
-    -- Поэтому пытаемся забирать при 00:01 / 00:00.
-    local ready =
-        info.claimText == "CLAIM"
-        and info.remaining ~= nil
-        and info.remaining <= 1
-
-    return ready, info
+local function cardClaimed(card)
+    local info = getCardInfo(card)
+    return info and info.claimText == "CLAIMED"
 end
 
-local function physicalPlaytimeCardClick(card)
-    if not card or not card.Parent then return false end
-
-    -- Физический fallback работает только когда окно действительно видно.
-    local cur = card
-    while cur and cur ~= playerGui do
-        if cur:IsA("GuiObject") and not cur.Visible then
-            return false
-        end
-        if cur:IsA("ScreenGui") and not cur.Enabled then
-            return false
-        end
-        cur = cur.Parent
+local function cardReady(card)
+    local info = getCardInfo(card)
+    if not info then
+        return false, nil
     end
 
-    local x = math.floor(card.AbsolutePosition.X + card.AbsoluteSize.X * 0.5)
-    local y = math.floor(card.AbsolutePosition.Y + card.AbsoluteSize.Y * 0.5)
+    local textReady =
+        info.claimText == "CLAIM"
+        or info.claimText == "ПОЛУЧИТЬ"
 
+    -- Главная проверка V43:
+    -- не "таймер <= 1", а реально показанная кнопка Claim.
+    return textReady and info.claimLocalVisible, info
+end
+
+local function vimClickAt(x, y)
     return pcall(function()
-        VirtualInputManager:SendMouseMoveEvent(x, y, game)
-        task.wait(0.03)
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-        task.wait(0.07)
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+        VirtualInputManager:SendMouseMoveEvent(
+            math.floor(x),
+            math.floor(y),
+            game
+        )
+
+        task.wait(0.04)
+
+        VirtualInputManager:SendMouseButtonEvent(
+            math.floor(x),
+            math.floor(y),
+            0,
+            true,
+            game,
+            0
+        )
+
+        task.wait(0.09)
+
+        VirtualInputManager:SendMouseButtonEvent(
+            math.floor(x),
+            math.floor(y),
+            0,
+            false,
+            game,
+            0
+        )
     end)
 end
 
-local function triggerPlaytimeCard(card)
+local function vimClickGui(obj)
+    if not obj or not obj.Parent or not obj:IsA("GuiObject") then
+        return false
+    end
+
+    local pos = obj.AbsolutePosition
+    local size = obj.AbsoluteSize
+
+    return vimClickAt(
+        pos.X + size.X * 0.5,
+        pos.Y + size.Y * 0.5
+    )
+end
+
+local function waitForCardClaimed(card, timeout)
+    local deadline = os.clock() + (tonumber(timeout) or 0.35)
+
+    while alive and state.autoPlaytimeRewards and os.clock() < deadline do
+        if cardClaimed(card) then
+            return true
+        end
+        task.wait(0.03)
+    end
+
+    return cardClaimed(card)
+end
+
+local function openPlaytimeMenuIfNeeded()
+    local _, playtime = getPlaytimeObjects()
+
+    if playtime and guiActuallyVisible(playtime) then
+        return true
+    end
+
+    local openButton = getPlaytimeOpenButton()
+    if not openButton then
+        return false
+    end
+
+    -- Сначала пробуем событие.
+    if type(firesignal) == "function" then
+        pcall(function()
+            firesignal(openButton.MouseButton1Click)
+        end)
+        task.wait(0.15)
+
+        _, playtime = getPlaytimeObjects()
+        if playtime and guiActuallyVisible(playtime) then
+            return true
+        end
+
+        pcall(function()
+            firesignal(openButton.Activated)
+        end)
+        task.wait(0.15)
+
+        _, playtime = getPlaytimeObjects()
+        if playtime and guiActuallyVisible(playtime) then
+            return true
+        end
+    end
+
+    -- Fallback: реальный виртуальный клик по кнопке PLAYTIME REWARD справа.
+    if guiActuallyVisible(openButton) then
+        vimClickGui(openButton)
+        task.wait(0.25)
+    end
+
+    _, playtime = getPlaytimeObjects()
+    return playtime and guiActuallyVisible(playtime)
+end
+
+local function tryClaimPlaytimeCard(card)
     if not card or not card.Parent then
         return false, "CARD_MISSING"
     end
 
-    local before = getPlaytimeCardState(card)
-    if not before or before.claimText ~= "CLAIM" then
-        return false, "NOT_CLAIM"
+    if cardClaimed(card) then
+        return true, "ALREADY_CLAIMED"
     end
 
-    -- 1) Сначала точное событие самой карточки.
+    -- 1) Прямой сигнал MouseButton1Click по САМОЙ карточке.
     if type(firesignal) == "function" then
         pcall(function()
             firesignal(card.MouseButton1Click)
         end)
 
-        task.wait(0.10)
-
-        local after = getPlaytimeCardState(card)
-        if after and after.claimText == "CLAIMED" then
+        if waitForCardClaimed(card, 0.25) then
             return true, "MouseButton1Click"
         end
 
+        -- 2) Activated по той же карточке.
         pcall(function()
             firesignal(card.Activated)
         end)
 
-        task.wait(0.10)
-
-        after = getPlaytimeCardState(card)
-        if after and after.claimText == "CLAIMED" then
+        if waitForCardClaimed(card, 0.25) then
             return true, "Activated"
         end
     end
 
-    -- 2) Если окно открыто, пробуем обычный виртуальный клик.
-    physicalPlaytimeCardClick(card)
-    task.wait(0.12)
+    -- 3) Если executor не отработал firesignal:
+    -- открываем меню и физически кликаем по зелёной области Claim.
+    if openPlaytimeMenuIfNeeded() then
+        local info = getCardInfo(card)
 
-    local after = getPlaytimeCardState(card)
-    if after and after.claimText == "CLAIMED" then
-        return true, "VirtualInput"
+        if info and info.claim and guiActuallyVisible(info.claim) then
+            vimClickGui(info.claim)
+
+            if waitForCardClaimed(card, 0.40) then
+                return true, "VirtualInputClaim"
+            end
+        end
+
+        -- 4) Последний fallback: клик по самой карточке.
+        if guiActuallyVisible(card) then
+            vimClickGui(card)
+
+            if waitForCardClaimed(card, 0.40) then
+                return true, "VirtualInputCard"
+            end
+        end
     end
 
     return false, "NO_CONFIRM"
 end
 
-local function collectReadyPlaytimeRewards()
-    local scrolling = getPlaytimeScrollingFrame()
+local function scanPlaytimeRewards()
+    local _, _, scrolling = getPlaytimeObjects()
     if not scrolling then
         return
     end
 
-    local cards = {}
-
-    for _, child in ipairs(scrolling:GetChildren()) do
-        if child:IsA("GuiButton") and tonumber(child.Name) then
-            cards[#cards + 1] = child
-        end
-    end
-
-    table.sort(cards, function(a, b)
-        return (tonumber(a.Name) or 999) < (tonumber(b.Name) or 999)
-    end)
-
-    for _, card in ipairs(cards) do
-        if not state.autoPlaytimeRewards or not alive then
+    for i = 1, 12 do
+        if not alive or not state.autoPlaytimeRewards then
             return
         end
 
-        local ready, info = playtimeCardIsReady(card)
+        local card = scrolling:FindFirstChild(tostring(i))
 
-        if ready then
-            local key = tostring(card.Name)
-            local now = os.clock()
-            local lastAttempt = playtimeLastAttempt[key] or 0
+        if card and card:IsA("GuiButton") then
+            local ready, info = cardReady(card)
 
-            -- Не спамим одну карточку десятками сигналов в одну секунду.
-            if now - lastAttempt >= 0.45 then
-                playtimeLastAttempt[key] = now
+            if ready then
+                local key = tostring(i)
+                local now = os.clock()
+                local lastAttempt = playtimeRewardAttempts[key] or 0
 
-                local ok, method = triggerPlaytimeCard(card)
+                if now - lastAttempt >= 0.65 then
+                    playtimeRewardAttempts[key] = now
 
-                if ok then
-                    playtimeClaimedCount += 1
-                    playtimeLastAttempt[key] = os.clock()
+                    local ok, method = tryClaimPlaytimeCard(card)
 
-                    print(string.format(
-                        "[AUTO PLAYTIME] награда #%s получена // %s // всего %d",
-                        key,
-                        tostring(method),
-                        playtimeClaimedCount
-                    ))
+                    if ok then
+                        playtimeClaimedCount += 1
 
-                    task.wait(0.15)
-                else
-                    print(string.format(
-                        "[AUTO PLAYTIME] награда #%s готова (%s), повторим // %s",
-                        key,
-                        info and info.timerText or "?",
-                        tostring(method)
-                    ))
+                        print(string.format(
+                            "[AUTO PLAYTIME] НАГРАДА #%s ✓ // %s // timer=%s // всего=%d",
+                            key,
+                            tostring(method),
+                            info and tostring(info.timerText) or "?",
+                            playtimeClaimedCount
+                        ))
+
+                        task.wait(0.12)
+                    else
+                        warn(string.format(
+                            "[AUTO PLAYTIME] #%s готова, но клик не подтверждён // %s",
+                            key,
+                            tostring(method)
+                        ))
+                    end
                 end
             end
         end
@@ -815,10 +932,15 @@ end
 task.spawn(function()
     while alive do
         if state.autoPlaytimeRewards then
-            pcall(collectReadyPlaytimeRewards)
-            task.wait(0.18)
+            local ok, err = pcall(scanPlaytimeRewards)
+
+            if not ok then
+                warn("[AUTO PLAYTIME ERROR] " .. tostring(err))
+            end
+
+            task.wait(0.20)
         else
-            task.wait(0.35)
+            task.wait(0.45)
         end
     end
 end)
@@ -1193,7 +1315,7 @@ local routeData = {
 }
 
 -- =========================================================
--- ЭТАЖИ // FIXED POINTS V41
+-- ЭТАЖИ // FIXED POINTS V43
 -- =========================================================
 
 local FLOOR_HOME = Vector3.new(5251.50, 4.45, 94.00)
@@ -1389,7 +1511,7 @@ farmInfo.Parent = farmPage
 round(farmInfo, 5)
 addStroke(farmInfo, C.text, 0.68)
 
-makeLabel(farmInfo, "АВТОФАРМ V41 // 2 МАРШРУТА + ЭТАЖИ",
+makeLabel(farmInfo, "АВТОФАРМ V43 // 2 МАРШРУТА + ЭТАЖИ",
     UDim2.fromOffset(12, 3), UDim2.new(1, -24, 0, 20),
     16, C.text, Enum.Font.GothamBold)
 
@@ -2558,7 +2680,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- ЭТАЖИ // AUTO ENGINE V41
+-- ЭТАЖИ // AUTO ENGINE V43
 -- =========================================================
 
 local floorCycleRunning = false
@@ -3191,8 +3313,8 @@ end
 
 addConnection(closeBtn.MouseButton1Click:Connect(shutdown))
 
-print("[CYBER PANEL V41 RU] Loaded")
-print("[CYBER PANEL V41 RU] Route 1: 15 лок + сундук (1589.98)")
-print("[CYBER PANEL V41 RU] Route 2: Кубки N2 (1 точка + сундук 226.39)")
-print("[CYBER PANEL V41 RU] Floors: HOME -> PORTAL -> START -> FALL -> TIMER -> DEATH -> NO -> 1.5s -> HOME")
-print("[CYBER PANEL V41 RU] All functions OFF")
+print("[CYBER PANEL V43 RU] Loaded")
+print("[CYBER PANEL V43 RU] Route 1: 15 лок + сундук (1589.98)")
+print("[CYBER PANEL V43 RU] Route 2: Кубки N2 (1 точка + сундук 226.39)")
+print("[CYBER PANEL V43 RU] Floors: HOME -> PORTAL -> START -> FALL -> TIMER -> DEATH -> NO -> 1.5s -> HOME")
+print("[CYBER PANEL V43 RU] All functions OFF")
